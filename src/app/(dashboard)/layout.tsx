@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/dashboard/Sidebar";
+import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { LogoutButton } from "../logout-button";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -43,7 +44,10 @@ export default async function DashboardLayout({
               {ROLE_LABEL[role] ?? role}
             </span>
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <LogoutButton />
+          </div>
         </header>
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>

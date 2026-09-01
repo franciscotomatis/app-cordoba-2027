@@ -9,9 +9,11 @@ const ROLES = ["admin", "perito", "cliente", "lectura"] as const;
 export function SelectorRol({
   userId,
   rolActual,
+  esUnoMismo = false,
 }: {
   userId: string;
   rolActual: string;
+  esUnoMismo?: boolean;
 }) {
   const router = useRouter();
   const [rol, setRol] = useState(rolActual);
@@ -34,6 +36,21 @@ export function SelectorRol({
     }
     setRol(nuevo);
     router.refresh();
+  }
+
+  // Nadie puede cambiarse el rol a sí mismo (también bloqueado en la base de datos),
+  // para no quedar sin acceso al panel de administración.
+  if (esUnoMismo) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="mono rounded bg-[var(--color-surface-muted)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-muted)]">
+          {rol}
+        </span>
+        <span className="text-[11px] text-[var(--color-ink-faint)]">
+          tu propio usuario
+        </span>
+      </div>
+    );
   }
 
   return (

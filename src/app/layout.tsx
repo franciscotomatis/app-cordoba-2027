@@ -23,6 +23,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es"
       className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}
     >
+      <head>
+        {/* Aplica el tema guardado antes del primer pintado para que no haya parpadeo. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("tema");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="h-full flex flex-col">{children}</body>
     </html>
   );

@@ -43,3 +43,6 @@ next-env.d.ts
 # capturas de verificación visual
 /capturas
 /capturas2
+
+# capturas de QA local
+.qa/

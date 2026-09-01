@@ -24,8 +24,9 @@
   --color-danger: #c0503f;
 }
 
+/* Oscuro por preferencia del sistema, salvo que el usuario haya elegido claro. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-canvas: #181716;
     --color-surface: #201e1c;
     --color-surface-muted: #262322;
@@ -44,6 +45,27 @@
     --color-warning: #d9a05b;
     --color-danger: #d97362;
   }
+}
+
+/* Elección manual de modo oscuro: gana sobre la preferencia del sistema. */
+:root[data-theme="dark"] {
+  --color-canvas: #181716;
+  --color-surface: #201e1c;
+  --color-surface-muted: #262322;
+  --color-border: #35312e;
+  --color-border-strong: #47423d;
+
+  --color-ink: #ece7e0;
+  --color-ink-muted: #a49c92;
+  --color-ink-faint: #7d766e;
+
+  --color-accent: #e08b6d;
+  --color-accent-hover: #eda183;
+  --color-accent-soft: #2e2521;
+
+  --color-positive: #7ba86f;
+  --color-warning: #d9a05b;
+  --color-danger: #d97362;
 }
 
 @theme inline {
@@ -99,4 +121,46 @@ body {
   background: var(--color-border-strong);
   border-radius: 6px;
   border: 2px solid var(--color-canvas);
+}
+
+/* Popups de Leaflet con la paleta de la app */
+.leaflet-popup-content-wrapper {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 0;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 12.5px;
+  width: auto !important;
+}
+.leaflet-popup-tip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.leaflet-popup-close-button {
+  color: var(--color-ink-faint) !important;
+  padding: 6px 6px 0 0 !important;
+}
+.leaflet-container {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  background: var(--color-surface-muted);
+}
+.leaflet-control-layers,
+.leaflet-bar a {
+  background: var(--color-surface) !important;
+  color: var(--color-ink) !important;
+  border-color: var(--color-border) !important;
+}
+.leaflet-bar a:hover {
+  background: var(--color-surface-muted) !important;
+}
+.leaflet-control-attribution {
+  background: var(--color-surface) !important;
+  color: var(--color-ink-faint) !important;
+  font-size: 10px;
 }

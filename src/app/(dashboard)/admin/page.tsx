@@ -53,7 +53,11 @@ export default async function AdminPage() {
                 <td className="mono py-2 text-[var(--color-ink-muted)]">{u.email ?? "—"}</td>
                 <td className="py-2">{u.nombre_completo ?? "—"}</td>
                 <td className="py-2">
-                  <SelectorRol userId={u.id} rolActual={u.role} />
+                  <SelectorRol
+                    userId={u.id}
+                    rolActual={u.role}
+                    esUnoMismo={u.id === user.id}
+                  />
                 </td>
               </tr>
             ))}
@@ -63,7 +67,8 @@ export default async function AdminPage() {
 
       <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">
         Los usuarios nuevos se crean desde Supabase (Authentication → Users) y aparecen acá
-        automáticamente con rol &quot;lectura&quot; para que les asignes el que corresponda.
+        automáticamente con rol &quot;lectura&quot; para que les asignes el que corresponda. Nadie
+        puede cambiarse el rol a sí mismo, para que no queden cuentas sin administrador.
       </p>
     </div>
   );
