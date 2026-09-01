@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./logout-button";
+import MapaLotesClient from "@/components/MapaLotesClient";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrador",
@@ -42,8 +43,8 @@ export default async function Home() {
         <LogoutButton />
       </header>
 
-      <main className="flex flex-1 items-center justify-center bg-zinc-50 text-zinc-500">
-        <p>El mapa interactivo se agrega en la siguiente fase.</p>
+      <main className="relative flex-1">
+        <MapaLotesClient />
       </main>
     </div>
   );
