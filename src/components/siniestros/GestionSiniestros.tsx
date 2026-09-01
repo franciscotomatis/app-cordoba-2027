@@ -130,10 +130,12 @@ export function GestionSiniestros({
   casos,
   peritos,
   puedeEditar,
+  rol,
 }: {
   casos: CasoSiniestro[];
   peritos: PeritoOpcion[];
   puedeEditar: boolean;
+  rol: string;
 }) {
   const router = useRouter();
 
@@ -653,7 +655,22 @@ export function GestionSiniestros({
           </tbody>
         </table>
 
-        {filtrados.length === 0 && (
+        {casos.length === 0 && (
+          <div className="p-10 text-center">
+            <p className="mb-1 text-[13px] font-semibold">
+              {rol === "perito"
+                ? "Todavía no tenés casos asignados"
+                : "No hay siniestros cargados"}
+            </p>
+            <p className="text-[12px] text-[var(--color-ink-muted)]">
+              {rol === "perito"
+                ? "Cuando un administrador te asigne uno, va a aparecer en esta lista junto con los lotes del asegurado."
+                : "Los casos se cargan con la importación de datos."}
+            </p>
+          </div>
+        )}
+
+        {casos.length > 0 && filtrados.length === 0 && (
           <div className="p-8 text-center">
             <p className="text-[12px] text-[var(--color-ink-muted)]">
               {soloSeleccionMapa

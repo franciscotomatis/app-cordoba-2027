@@ -291,7 +291,7 @@ function Encuadre({ puntos }: { puntos: [number, number][] }) {
   return null;
 }
 
-export default function MapaLotes() {
+export default function MapaLotes({ rol }: { rol: string }) {
   const [datos, setDatos] = useState<FeatureCollection | null>(lotesEnCache());
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(!lotesEnCache());
@@ -586,6 +586,10 @@ export default function MapaLotes() {
     }
   }, []);
 
+  // Sin filtros y sin ningún lote visible: el usuario no tiene alcance asignado,
+  // no es que la búsqueda no encontró nada.
+  const sinAlcance = !cargando && !error && (datos?.features.length ?? 0) === 0;
+
   const seleccionados = seleccion.length;
   const seleccionConSiniestro = useMemo(() => {
     const elegidos = new Set(seleccion);
@@ -801,7 +805,26 @@ export default function MapaLotes() {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {(error || cargando || (!cargando && recorte.lotes === 0)) && (
+        {sinAlcance && (
+          <div className="absolute inset-0 z-[1001] flex items-center justify-center bg-[var(--color-canvas)]/85 p-6 backdrop-blur-sm">
+            <div className="max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-center">
+              <p className="mb-1 text-[13px] font-semibold">
+                {rol === "perito"
+                  ? "Todavía no tenés casos asignados"
+                  : "No hay lotes para mostrar"}
+              </p>
+              <p className="text-[12px] text-[var(--color-ink-muted)]">
+                {rol === "perito"
+                  ? "Cuando un administrador te asigne un siniestro, vas a ver acá ese lote y todos los del mismo asegurado."
+                  : rol === "cliente"
+                    ? "Tu usuario todavía no está vinculado a un asegurado. Pedile a un administrador que lo asocie."
+                    : "No hay lotes cargados en el sistema."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!sinAlcance && (error || cargando || (!cargando && recorte.lotes === 0)) && (
           <div
             className={`absolute top-3 left-1/2 z-[1000] -translate-x-1/2 rounded-md border bg-[var(--color-surface)] px-3 py-1.5 text-[12px] ${
               error

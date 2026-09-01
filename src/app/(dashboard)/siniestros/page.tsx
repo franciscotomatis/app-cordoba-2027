@@ -52,6 +52,7 @@ export default async function SiniestrosPage() {
           casos={casos}
           peritos={(peritos ?? []) as PeritoOpcion[]}
           puedeEditar={puedeEditar}
+          rol={rol}
         />
       )}
     </div>
