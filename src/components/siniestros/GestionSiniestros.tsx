@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT } from "@/lib/colores";
+import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT, colorPorCultivo } from "@/lib/colores";
 import {
   COLOR_ESTADO,
   ESTADOS,
@@ -62,6 +62,7 @@ export type CasoSiniestro = {
   lat: number | null;
   lon: number | null;
   fotos: number;
+  unidad_con_denuncia: boolean;
 };
 
 export type PeritoOpcion = {
@@ -193,6 +194,7 @@ export function GestionSiniestros({
   const [texto, setTexto] = useState("");
   const [cuit, setCuit] = useState("");
   const [causas, setCausas] = useState<string[]>([]);
+  const [cultivos, setCultivos] = useState<string[]>([]);
   const [estados, setEstados] = useState<string[]>([]);
   const [zonas, setZonas] = useState<string[]>([]);
   const [peritosFiltro, setPeritosFiltro] = useState<string[]>([]);
@@ -232,6 +234,10 @@ export function GestionSiniestros({
 
     return {
       causas: contar((c) => c.causa).map((o) => ({ ...o, color: colorCausa(o.valor).fill })),
+      cultivos: contar((c) => c.cultivo).map((o) => ({
+        ...o,
+        color: colorPorCultivo(o.valor).fill,
+      })),
       zonas: contar((c) => c.zona_nombre).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta)),
       estados: ESTADOS.map((e) => ({
         valor: e,
@@ -255,6 +261,7 @@ export function GestionSiniestros({
     const q = textoDif.trim().toLowerCase();
     const cu = soloDigitos(cuitDif);
     const setCausas = new Set(causas);
+    const setCultivos = new Set(cultivos);
     const setEstados = new Set(estados);
     const setZonas = new Set(zonas);
     const setPeritos = new Set(peritosFiltro);
@@ -278,6 +285,7 @@ export function GestionSiniestros({
       }
       if (cu && !soloDigitos(c.cliente_cuit ?? "").includes(cu)) return false;
       if (setCausas.size && !setCausas.has(c.causa?.trim() ?? "")) return false;
+      if (setCultivos.size && !setCultivos.has(c.cultivo?.trim() ?? "")) return false;
       if (setEstados.size && !setEstados.has(c.estado ?? "")) return false;
       if (setZonas.size && !setZonas.has(c.zona_nombre?.trim() ?? "")) return false;
       if (setPeritos.size) {
@@ -291,6 +299,7 @@ export function GestionSiniestros({
     textoDif,
     cuitDif,
     causas,
+    cultivos,
     estados,
     zonas,
     peritosFiltro,
@@ -470,6 +479,13 @@ export function GestionSiniestros({
           ancho="w-36"
         />
         <FiltroMulti
+          titulo="Cultivo"
+          opciones={opciones.cultivos}
+          seleccion={cultivos}
+          onChange={setCultivos}
+          ancho="w-36"
+        />
+        <FiltroMulti
           titulo="Estado"
           opciones={opciones.estados}
           seleccion={estados}
@@ -498,7 +514,7 @@ export function GestionSiniestros({
               ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
               : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)]"
           }`}
-          title="El cálculo del multirriesgo necesita el rinde de todos los lotes del CUIT, no solo de los denunciados"
+          title="El multirriesgo se liquida por CUIT y cultivo: suma los demás lotes de esa misma combinación, que también necesitan rinde estimado"
         >
           <Layers className="h-3.5 w-3.5" />
           {incluirSinDenuncia
@@ -695,6 +711,7 @@ export function GestionSiniestros({
               </th>
               <th className="px-2 py-2 font-medium">Lote</th>
               <th className="px-2 py-2 font-medium">Asegurado</th>
+              <th className="px-2 py-2 font-medium">Cultivo</th>
               <th className="px-2 py-2 font-medium">Causa</th>
               <th className="px-2 py-2 font-medium">Fecha</th>
               <th className="px-2 py-2 text-right font-medium">Ha</th>
@@ -751,6 +768,15 @@ export function GestionSiniestros({
                     <div className="mono text-[10.5px] text-[var(--color-ink-faint)]">
                       {c.cliente_cuit ?? ""}
                     </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-sm"
+                        style={{ background: colorPorCultivo(c.cultivo).fill }}
+                      />
+                      {c.cultivo ?? "—"}
+                    </span>
                   </td>
                   <td className="px-2 py-1.5">
                     {c.siniestro_id === null ? (

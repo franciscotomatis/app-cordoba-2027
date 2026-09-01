@@ -14,7 +14,8 @@ export default async function SiniestrosPage({
 }) {
   const { todos } = await searchParams;
   // Por defecto solo los casos denunciados; con ?todos=1 se suman los lotes sin
-  // denuncia, que también necesitan rinde estimado para el cálculo del CUIT.
+  // denuncia PERO solo los del mismo CUIT y cultivo que ya tienen un caso, que
+  // son los que entran en esa liquidación.
   const incluirSinDenuncia = todos === "1";
 
   const supabase = await createClient();
@@ -47,9 +48,11 @@ export default async function SiniestrosPage({
     return (b.fecha ?? "").localeCompare(a.fecha ?? "");
   });
 
+  const deUnidadesConDenuncia = ordenadas.filter((f) => f.unidad_con_denuncia);
+
   const casos = incluirSinDenuncia
-    ? ordenadas
-    : ordenadas.filter((f) => f.siniestro_id !== null);
+    ? deUnidadesConDenuncia
+    : deUnidadesConDenuncia.filter((f) => f.siniestro_id !== null);
 
   const { data: peritos } = await supabase
     .from("profiles")
@@ -75,7 +78,9 @@ export default async function SiniestrosPage({
           puedeEditar={puedeEditar}
           rol={rol}
           incluirSinDenuncia={incluirSinDenuncia}
-          totalSinDenuncia={filas.filter((f) => f.siniestro_id === null).length}
+          totalSinDenuncia={
+            deUnidadesConDenuncia.filter((f) => f.siniestro_id === null).length
+          }
         />
       )}
     </div>
