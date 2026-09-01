@@ -23,6 +23,7 @@ import {
 } from "@/lib/siniestros";
 import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exportar";
 import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
+import { invalidarLotes } from "@/lib/datosMapa";
 import { FiltroMulti } from "@/components/mapa/FiltroMulti";
 import { BuscadorTexto } from "@/components/mapa/BuscadorTexto";
 import { GaleriaLote } from "./GaleriaLote";
@@ -293,6 +294,7 @@ export function GestionSiniestros({
     setAviso(
       `${ids.length} caso${ids.length > 1 ? "s" : ""} pasaron a "${ETIQUETA_ESTADO[estado]}".`
     );
+    invalidarLotes(); // el mapa tiene los estados cacheados
     router.refresh();
   }
 
@@ -323,6 +325,7 @@ export function GestionSiniestros({
         ? `${datos.asignados} casos asignados y notificados por correo.`
         : `${datos.asignados} casos asignados. ${datos.motivoEmail ?? ""}`
     );
+    invalidarLotes();
     router.refresh();
   }
 
