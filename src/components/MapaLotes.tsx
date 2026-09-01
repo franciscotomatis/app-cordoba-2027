@@ -19,9 +19,17 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import type { Feature, FeatureCollection } from "geojson";
-import { Crosshair, Lasso, ListChecks, MousePointerClick, X } from "lucide-react";
+import {
+  Crosshair,
+  Lasso,
+  ListChecks,
+  MousePointerClick,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT, colorPorCultivo } from "@/lib/colores";
-import { cargarLotes, lotesEnCache } from "@/lib/datosMapa";
+import { cargarLotes, invalidarLotes, lotesEnCache } from "@/lib/datosMapa";
+import { createClient } from "@/lib/supabase/client";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
@@ -50,6 +58,7 @@ export type LoteProps = {
   hectareasDeclaradas: number | null;
   porcentajeAsegurado: number | null;
   rendimientoAsegurado: number | null;
+  rindeEstimado: number | null;
   rendimientoAnterior: number | null;
   sumaAsegurada: number | null;
   fechaSiembra: string | null;
@@ -111,6 +120,14 @@ const escapar = (v: unknown) =>
 
 const normalizar = (v: string) => v.trim().toLowerCase();
 const soloDigitos = (v: string) => v.replace(/[^0-9]/g, "");
+
+/** El rinde asegurado viene como total de quintales del lote: se muestra por hectárea. */
+function rindeAseguradoPorHa(p: LoteProps) {
+  const ha = Number(p.hectareas ?? 0);
+  const total = Number(p.rendimientoAsegurado ?? 0);
+  if (!ha || !total) return null;
+  return Math.round(total / ha);
+}
 
 function colorCausa(causa?: string | null) {
   const clave = causa?.trim().toLowerCase();
@@ -174,7 +191,12 @@ function contenidoPopup(p: LoteProps) {
       ${fila("Cultivo", escapar(p.cultivo ?? "—"))}
       ${fila("Hectáreas aseg.", num(p.hectareas, 1), true)}
       ${fila("Hectáreas decl.", num(p.hectareasDeclaradas, 1) + pct)}
-      ${fila("Rinde asegurado", num(p.rendimientoAsegurado))}
+      ${fila("Rinde asegurado", rindeAseguradoPorHa(p) === null ? "—" : `${rindeAseguradoPorHa(p)} qq/ha`)}
+      ${
+        p.rindeEstimado != null
+          ? fila("Rinde estimado", `${num(p.rindeEstimado, 1)} qq/ha`, true)
+          : ""
+      }
       ${fila("Suma asegurada", num(p.sumaAsegurada))}
       ${fila("Siembra", fecha(p.fechaSiembra))}
       ${p.cultivoAnterior ? fila("Cultivo anterior", escapar(p.cultivoAnterior)) : ""}
@@ -292,6 +314,7 @@ function Encuadre({ puntos }: { puntos: [number, number][] }) {
 }
 
 export default function MapaLotes({ rol }: { rol: string }) {
+  const puedeCargarRinde = rol === "admin" || rol === "perito";
   const [datos, setDatos] = useState<FeatureCollection | null>(lotesEnCache());
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(!lotesEnCache());
@@ -300,6 +323,10 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const [colorPor, setColorPor] = useState<"cultivo" | "siniestro">("cultivo");
   const [modoSeleccion, setModoSeleccion] = useState(false);
   const [modoLazo, setModoLazo] = useState(false);
+  const [rindeTanda, setRindeTanda] = useState("");
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [guardandoRinde, setGuardandoRinde] = useState(false);
+  const [avisoRinde, setAvisoRinde] = useState<string | null>(null);
   const [seleccion, setSeleccion] = useSeleccion();
 
   const capaRef = useRef<L.GeoJSON | null>(null);
@@ -562,6 +589,42 @@ export default function MapaLotes({ rol }: { rol: string }) {
     });
   }, []);
 
+  /** Carga el mismo rinde estimado (qq/ha) en todos los lotes seleccionados. */
+  async function cargarRindeEnSeleccion() {
+    const valor = Number(rindeTanda.replace(",", "."));
+    if (!Number.isFinite(valor) || valor < 0) {
+      setAvisoRinde("Ingresá un rinde válido en qq/ha.");
+      return;
+    }
+
+    setGuardandoRinde(true);
+    setAvisoRinde(null);
+
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("lotes")
+      .update({ rinde_estimado: valor, rinde_estimado_en: new Date().toISOString() })
+      .in("id", seleccion);
+
+    setGuardandoRinde(false);
+
+    if (error) {
+      setAvisoRinde(`No se pudo guardar: ${error.message}`);
+      return;
+    }
+
+    // Se actualiza lo que ya está en pantalla y se descarta la caché.
+    for (const f of datos?.features ?? []) {
+      const p = f.properties as LoteProps;
+      if (seleccion.includes(p.id)) p.rindeEstimado = valor;
+    }
+    invalidarLotes();
+    setRindeTanda("");
+    setAvisoRinde(
+      `Rinde de ${valor} qq/ha cargado en ${seleccion.length} lote${seleccion.length > 1 ? "s" : ""}.`
+    );
+  }
+
   const seleccionarConLazo = useCallback(
     (poligono: [number, number][]) => {
       const nuevos = new Set(seleccionRef.current);
@@ -598,15 +661,31 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="relative z-[1300] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5">
+      <div className="relative z-[1300] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-4 sm:py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <BuscadorTexto
             valor={filtros.texto}
             onChange={(v) => setFiltros((f) => ({ ...f, texto: v }))}
             sugerencias={opciones.clientes}
             placeholder="Asegurado, campo, lote o localidad..."
+            ancho="w-full sm:w-72"
           />
 
+          <button
+            onClick={() => setFiltrosAbiertos((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] sm:hidden ${
+              hayFiltros
+                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                : "border-[var(--color-border)] text-[var(--color-ink-muted)]"
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filtros
+          </button>
+
+          <div
+            className={`${filtrosAbiertos ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 sm:flex sm:w-auto`}
+          >
           <input
             value={filtros.cuit}
             onChange={(e) => setFiltros((f) => ({ ...f, cuit: e.target.value }))}
@@ -704,6 +783,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
               Limpiar
             </button>
           )}
+          </div>
 
           <div className="ml-auto flex items-baseline gap-1.5 text-[12px]">
             <span className="mono text-[13px] font-semibold">
@@ -727,7 +807,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
       </div>
 
       {/* Barra de selección */}
-      <div className="relative z-[1200] flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-1.5">
+      <div className="relative z-[1200] flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-1.5 sm:px-4">
         <button
           onClick={() => {
             setModoSeleccion((v) => !v);
@@ -784,6 +864,26 @@ export default function MapaLotes({ rol }: { rol: string }) {
               </>
             )}
           </span>
+          {seleccionados > 0 && puedeCargarRinde && (
+            <div className="flex items-center gap-1">
+              <input
+                value={rindeTanda}
+                onChange={(e) => setRindeTanda(e.target.value)}
+                inputMode="decimal"
+                placeholder="Rinde qq/ha"
+                disabled={guardandoRinde}
+                className="mono w-28 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] outline-none placeholder:font-sans focus:border-[var(--color-accent)] disabled:opacity-40"
+              />
+              <button
+                onClick={cargarRindeEnSeleccion}
+                disabled={guardandoRinde || !rindeTanda}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-[12px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-40"
+              >
+                {guardandoRinde ? "Guardando..." : "Cargar rinde"}
+              </button>
+            </div>
+          )}
+
           {seleccionados > 0 && (
             <>
               <button
@@ -803,6 +903,15 @@ export default function MapaLotes({ rol }: { rol: string }) {
           )}
         </div>
       </div>
+
+      {avisoRinde && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-accent-soft)] px-4 py-1.5 text-[12px] text-[var(--color-accent)]">
+          {avisoRinde}
+          <button onClick={() => setAvisoRinde(null)} className="ml-auto">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="relative min-h-0 flex-1">
         {sinAlcance && (

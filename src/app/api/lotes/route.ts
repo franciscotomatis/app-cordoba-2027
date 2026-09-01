@@ -25,6 +25,7 @@ type LoteMapa = {
   hectareas_declaradas: number | null;
   porcentaje_asegurado: number | null;
   rendimiento_asegurado: number | null;
+  rinde_estimado: number | null;
   rendimiento_anterior: number | null;
   suma_asegurada: number | null;
   fecha_siembra: string | null;
@@ -51,6 +52,7 @@ const COLUMNAS = [
   "hectareas_declaradas",
   "porcentaje_asegurado",
   "rendimiento_asegurado",
+  "rinde_estimado",
   "rendimiento_anterior",
   "suma_asegurada",
   "fecha_siembra",
@@ -91,6 +93,7 @@ export async function GET() {
         hectareasDeclaradas: l.hectareas_declaradas,
         porcentajeAsegurado: l.porcentaje_asegurado,
         rendimientoAsegurado: l.rendimiento_asegurado,
+        rindeEstimado: l.rinde_estimado,
         rendimientoAnterior: l.rendimiento_anterior,
         sumaAsegurada: l.suma_asegurada,
         fechaSiembra: l.fecha_siembra,

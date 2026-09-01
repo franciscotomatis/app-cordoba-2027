@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  SlidersHorizontal,
   FileDown,
   FileSpreadsheet,
   FileText,
@@ -26,6 +27,7 @@ import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
 import { invalidarLotes } from "@/lib/datosMapa";
 import { FiltroMulti } from "@/components/mapa/FiltroMulti";
 import { BuscadorTexto } from "@/components/mapa/BuscadorTexto";
+import { CeldaRinde } from "./CeldaRinde";
 import { GaleriaLote } from "./GaleriaLote";
 
 export type CasoSiniestro = {
@@ -49,6 +51,7 @@ export type CasoSiniestro = {
   hectareas_declaradas: number | null;
   suma_asegurada: number | null;
   rendimiento_asegurado: number | null;
+  rinde_estimado: number | null;
   fecha_siembra: string | null;
   cliente_nombre: string | null;
   cliente_cuit: string | null;
@@ -77,6 +80,17 @@ const fechaCorta = (v: string | null) => {
 
 const soloDigitos = (v: string) => v.replace(/[^0-9]/g, "");
 
+/**
+ * El sistema trae el rinde asegurado como TOTAL de quintales del lote.
+ * Lo que se muestra es el rinde por hectárea, que es como se trabaja a campo.
+ */
+function rindeAseguradoPorHa(c: { rendimiento_asegurado: number | null; hectareas_aseguradas: number | null }) {
+  const ha = Number(c.hectareas_aseguradas ?? 0);
+  const total = Number(c.rendimiento_asegurado ?? 0);
+  if (!ha || !total) return null;
+  return Math.round(total / ha);
+}
+
 function colorCausa(causa?: string | null) {
   const clave = causa?.trim().toLowerCase();
   return (clave && COLOR_CAUSA[clave]) || COLOR_CAUSA_DEFAULT;
@@ -94,7 +108,33 @@ const COLUMNAS_EXPORT: Columna<CasoSiniestro>[] = [
   { clave: "cultivo", titulo: "Cultivo", ancho: 12 },
   { clave: "hectareas_aseguradas", titulo: "Ha aseguradas", ancho: 14 },
   { clave: "hectareas_declaradas", titulo: "Ha declaradas", ancho: 14 },
-  { clave: "rendimiento_asegurado", titulo: "Rinde asegurado", ancho: 15 },
+  {
+    clave: "rinde_asegurado_qq_ha",
+    titulo: "Rinde asegurado (qq/ha)",
+    ancho: 20,
+    valor: (f) => rindeAseguradoPorHa(f) ?? "",
+  },
+  {
+    clave: "rinde_estimado",
+    titulo: "Rinde estimado (qq/ha)",
+    ancho: 20,
+    valor: (f) => (f.rinde_estimado == null ? "" : Number(f.rinde_estimado)),
+  },
+  {
+    clave: "quintales_asegurados",
+    titulo: "Quintales asegurados",
+    ancho: 18,
+    valor: (f) => (f.rendimiento_asegurado == null ? "" : Math.round(Number(f.rendimiento_asegurado))),
+  },
+  {
+    clave: "quintales_estimados",
+    titulo: "Quintales estimados",
+    ancho: 18,
+    valor: (f) =>
+      f.rinde_estimado == null || f.hectareas_aseguradas == null
+        ? ""
+        : Math.round(Number(f.rinde_estimado) * Number(f.hectareas_aseguradas)),
+  },
   { clave: "suma_asegurada", titulo: "Suma asegurada", ancho: 15 },
   {
     clave: "fecha_siembra",
@@ -153,6 +193,8 @@ export function GestionSiniestros({
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [peritoDestino, setPeritoDestino] = useState("");
+  const [rindeTanda, setRindeTanda] = useState("");
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [loteFotos, setLoteFotos] = useState<CasoSiniestro | null>(null);
 
   const textoDif = useDeferredValue(texto);
@@ -298,6 +340,37 @@ export function GestionSiniestros({
     router.refresh();
   }
 
+  /** Guarda el rinde estimado (qq/ha) en los lotes indicados. */
+  async function guardarRinde(loteIds: string[], valor: number | null) {
+    if (loteIds.length === 0) return;
+    setGuardando(true);
+    setAviso(null);
+
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("lotes")
+      .update({
+        rinde_estimado: valor,
+        rinde_estimado_en: valor === null ? null : new Date().toISOString(),
+      })
+      .in("id", loteIds);
+
+    setGuardando(false);
+
+    if (error) {
+      setAviso(`No se pudo guardar el rinde: ${error.message}`);
+      return;
+    }
+
+    setAviso(
+      valor === null
+        ? `Se borró el rinde estimado de ${loteIds.length} lote${loteIds.length > 1 ? "s" : ""}.`
+        : `Rinde estimado de ${valor} qq/ha cargado en ${loteIds.length} lote${loteIds.length > 1 ? "s" : ""}.`
+    );
+    invalidarLotes();
+    router.refresh();
+  }
+
   async function asignar() {
     if (!peritoDestino || elegidosCasos.length === 0) return;
     setGuardando(true);
@@ -343,14 +416,26 @@ export function GestionSiniestros({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 sm:px-5 sm:py-2.5">
         <BuscadorTexto
           valor={texto}
           onChange={setTexto}
           sugerencias={opciones.asegurados}
           placeholder="Asegurado, campo, lote o localidad..."
-          ancho="w-64"
+          ancho="w-full sm:w-64"
         />
+
+        <button
+          onClick={() => setFiltrosAbiertos((v) => !v)}
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-ink-muted)] sm:hidden"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Filtros
+        </button>
+
+        <div
+          className={`${filtrosAbiertos ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 sm:flex sm:w-auto`}
+        >
         <input
           value={cuit}
           onChange={(e) => setCuit(e.target.value)}
@@ -399,6 +484,7 @@ export function GestionSiniestros({
             Selección del mapa ({seleccionMapa.length})
           </button>
         )}
+        </div>
 
         <div className="mono ml-auto flex items-baseline gap-1.5 text-[12px]">
           <span className="text-[13px] font-semibold">{filtrados.length}</span>
@@ -413,7 +499,7 @@ export function GestionSiniestros({
       </div>
 
       {/* Acciones sobre la selección */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-5 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 sm:px-5">
         <span className="text-[12px] text-[var(--color-ink-muted)]">
           <span className="mono font-semibold text-[var(--color-ink)]">
             {elegidosCasos.length}
@@ -453,6 +539,35 @@ export function GestionSiniestros({
                 </option>
               ))}
             </select>
+
+            <div className="flex items-center gap-1">
+              <input
+                value={rindeTanda}
+                onChange={(e) => setRindeTanda(e.target.value)}
+                inputMode="decimal"
+                placeholder="Rinde qq/ha"
+                disabled={guardando || elegidosCasos.length === 0}
+                className="mono w-28 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] outline-none placeholder:font-sans focus:border-[var(--color-accent)] disabled:opacity-40"
+              />
+              <button
+                onClick={() => {
+                  const valor = Number(rindeTanda.replace(",", "."));
+                  if (!Number.isFinite(valor) || valor < 0) {
+                    setAviso("Ingresá un rinde válido en qq/ha.");
+                    return;
+                  }
+                  guardarRinde(
+                    [...new Set(elegidosCasos.map((c) => c.lote_id))],
+                    valor
+                  );
+                  setRindeTanda("");
+                }}
+                disabled={guardando || !rindeTanda || elegidosCasos.length === 0}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-[12px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-40"
+              >
+                Cargar rinde
+              </button>
+            </div>
 
             <div className="flex items-center gap-1">
               <select
@@ -531,7 +646,7 @@ export function GestionSiniestros({
 
       {/* Tabla */}
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full text-[12px]">
+        <table className="w-full min-w-[1000px] text-[12px]">
           <thead className="sticky top-0 z-10 bg-[var(--color-surface)]">
             <tr className="border-b border-[var(--color-border)] text-left text-[10.5px] tracking-wide text-[var(--color-ink-faint)] uppercase">
               <th className="w-8 px-3 py-2">
@@ -548,6 +663,12 @@ export function GestionSiniestros({
               <th className="px-2 py-2 font-medium">Causa</th>
               <th className="px-2 py-2 font-medium">Fecha</th>
               <th className="px-2 py-2 text-right font-medium">Ha</th>
+              <th className="px-2 py-2 text-right font-medium" title="Rinde asegurado en quintales por hectárea">
+                Rinde aseg.
+              </th>
+              <th className="px-2 py-2 text-right font-medium" title="Rinde estimado por el perito, en quintales por hectárea">
+                Rinde est.
+              </th>
               <th className="px-2 py-2 text-right font-medium">Daño</th>
               <th className="px-2 py-2 font-medium">Estado</th>
               <th className="px-2 py-2 font-medium">Perito</th>
@@ -610,6 +731,16 @@ export function GestionSiniestros({
                   </td>
                   <td className="mono px-2 py-1.5 text-right">
                     {num(c.hectareas_aseguradas, 1)}
+                  </td>
+                  <td className="mono px-2 py-1.5 text-right">
+                    {rindeAseguradoPorHa(c) ?? "—"}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <CeldaRinde
+                      valor={c.rinde_estimado}
+                      editable={puedeEditar}
+                      onGuardar={(v) => guardarRinde([c.lote_id], v)}
+                    />
                   </td>
                   <td className="mono px-2 py-1.5 text-right">{num(c.danio_estimado)}</td>
                   <td className="px-2 py-1.5">
