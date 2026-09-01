@@ -34,19 +34,24 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4">
+    <div className="flex flex-1 items-center justify-center px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-8 shadow-sm"
+        className="w-full max-w-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-7"
       >
-        <h1 className="mb-1 text-xl font-semibold text-zinc-900">
-          Programa Córdoba
-        </h1>
-        <p className="mb-6 text-sm text-zinc-500">
-          Ingresá con tu cuenta para ver los lotes.
-        </p>
+        <div className="mb-6 flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-accent)] text-[13px] font-semibold text-white">
+            C
+          </div>
+          <div className="leading-tight">
+            <p className="text-[13px] font-semibold">Programa Córdoba</p>
+            <p className="mono text-[10px] text-[var(--color-ink-faint)]">
+              Campaña 25/26
+            </p>
+          </div>
+        </div>
 
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
+        <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
           Email
         </label>
         <input
@@ -54,10 +59,10 @@ export default function LoginPage() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mb-4 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+          className="mb-3.5 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-canvas)] px-2.5 py-1.5 text-[13px] outline-none focus:border-[var(--color-accent)]"
         />
 
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
+        <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
           Contraseña
         </label>
         <input
@@ -65,11 +70,11 @@ export default function LoginPage() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-6 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+          className="mb-5 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-canvas)] px-2.5 py-1.5 text-[13px] outline-none focus:border-[var(--color-accent)]"
         />
 
         {error && (
-          <p className="mb-4 text-sm text-red-600" role="alert">
+          <p className="mb-3.5 text-[12px] text-[var(--color-danger)]" role="alert">
             {error}
           </p>
         )}
@@ -77,7 +82,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="w-full rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
           {loading ? "Ingresando..." : "Ingresar"}
         </button>

@@ -10,6 +10,7 @@ import {
 } from "react-leaflet";
 import type { Layer, LeafletMouseEvent } from "leaflet";
 import type { Feature, FeatureCollection } from "geojson";
+import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT } from "@/lib/colores";
 import "leaflet/dist/leaflet.css";
 
 type LoteProps = {
@@ -22,18 +23,6 @@ type LoteProps = {
   fill: string;
   borde: string;
 };
-
-const COLOR_CAUSA: Record<string, { fill: string; borde: string }> = {
-  granizo: { fill: "#00BCD4", borde: "#0097A7" },
-  sequia: { fill: "#FF5252", borde: "#D50000" },
-  sequía: { fill: "#FF5252", borde: "#D50000" },
-  inundacion: { fill: "#448AFF", borde: "#2979FF" },
-  inundación: { fill: "#448AFF", borde: "#2979FF" },
-  viento: { fill: "#7C4DFF", borde: "#651FFF" },
-  incendio: { fill: "#795548", borde: "#5D4037" },
-  helada: { fill: "#FFFFFF", borde: "#E0E0E0" },
-};
-const COLOR_CAUSA_DEFAULT = { fill: "#9C27B0", borde: "#7B1FA2" };
 
 function GpsControl() {
   const map = useMap();
@@ -164,8 +153,8 @@ export default function MapaLotes() {
         </div>
       )}
 
-      {/* Buscador de clientes */}
-      <div className="absolute top-3 left-3 z-[1000] w-64 rounded-md bg-white/95 p-3 shadow-md">
+      {/* Buscador de clientes (corrido para no pisar los controles de zoom) */}
+      <div className="absolute top-3 left-16 z-[1000] w-64 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-sm backdrop-blur">
         <label className="mb-1 block text-xs font-semibold text-zinc-600">
           Buscar cliente
         </label>
@@ -192,15 +181,19 @@ export default function MapaLotes() {
       </div>
 
       {/* Leyenda de hectáreas por cultivo */}
-      <div className="absolute bottom-6 right-3 z-[1000] max-h-64 w-56 overflow-y-auto rounded-md bg-white/95 p-3 text-xs shadow-md">
-        <p className="mb-2 font-semibold text-zinc-700">Hectáreas por cultivo</p>
+      <div className="absolute bottom-8 right-3 z-[1000] max-h-64 w-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-3 shadow-sm backdrop-blur">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-muted)]">
+          Hectáreas por cultivo
+        </p>
         <ul className="space-y-1">
           {[...hectareasPorCultivo.entries()]
             .sort((a, b) => b[1] - a[1])
             .map(([cultivo, ha]) => (
-              <li key={cultivo} className="flex justify-between text-zinc-600">
+              <li key={cultivo} className="flex justify-between text-[12px]">
                 <span>{cultivo}</span>
-                <span className="font-medium">{Math.round(ha).toLocaleString("es-AR")} ha</span>
+                <span className="mono text-[var(--color-ink-muted)]">
+                  {Math.round(ha).toLocaleString("es-AR")} ha
+                </span>
               </li>
             ))}
         </ul>
@@ -265,8 +258,10 @@ export default function MapaLotes() {
 
       <button
         onClick={() => setGpsActivo((v) => !v)}
-        className={`absolute bottom-6 left-3 z-[1000] rounded-full px-3 py-2 text-sm font-medium shadow-md ${
-          gpsActivo ? "bg-blue-600 text-white" : "bg-white text-zinc-700"
+        className={`absolute bottom-8 left-3 z-[1000] rounded-md border px-3 py-1.5 text-[12px] font-medium shadow-sm backdrop-blur transition-colors ${
+          gpsActivo
+            ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
+            : "border-[var(--color-border)] bg-[var(--color-surface)]/95 text-[var(--color-ink)]"
         }`}
       >
         📍 GPS
