@@ -1,17 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { invalidarLotes } from "@/lib/datosMapa";
 
 export function LogoutButton() {
-  const router = useRouter();
-
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    // Recarga completa: así no queda en memoria ningún dato del usuario anterior
+    // (los lotes se cachean en el módulo para no descargarlos en cada pantalla).
+    invalidarLotes();
+    window.location.href = "/login";
   }
 
   return (
