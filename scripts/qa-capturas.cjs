@@ -27,7 +27,7 @@ const DIR = ".qa";
   const secciones = [
     ["resumen", "/"],
     ["mapa", "/mapa"],
-    ["lotes", "/lotes"],
+    ["siniestros", "/siniestros"],
     ["clientes", "/clientes"],
     ["fotos", "/fotos"],
     ["peritos", "/peritos"],

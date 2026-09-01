@@ -24,6 +24,7 @@ import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT, colorPorCultivo } from "@/lib/colores
 import { cargarLotes, lotesEnCache } from "@/lib/datosMapa";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
+import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroMulti } from "./mapa/FiltroMulti";
 import { BuscadorTexto } from "./mapa/BuscadorTexto";
 import "leaflet/dist/leaflet.css";
@@ -70,6 +71,7 @@ type Filtros = {
   causas: string[];
   zonas: string[];
   departamentos: string[];
+  estados: string[];
   soloSiniestros: boolean;
   soloSeleccion: boolean;
 };
@@ -81,6 +83,7 @@ const FILTROS_VACIOS: Filtros = {
   causas: [],
   zonas: [],
   departamentos: [],
+  estados: [],
   soloSiniestros: false,
   soloSeleccion: false,
 };
@@ -344,6 +347,7 @@ export default function MapaLotes() {
         departamento: p.departamento?.trim() ?? "",
         causas: (p.siniestros ?? []).map((s) => s.causa?.trim() ?? ""),
         causaPrincipal: p.siniestros?.[0]?.causa?.trim() ?? null,
+        estadosCaso: (p.siniestros ?? []).map((s) => s.estado ?? "DENUNCIADO"),
         lat: p.lat,
         lon: p.lon,
         hectareas: p.hectareas ?? 0,
@@ -388,6 +392,14 @@ export default function MapaLotes() {
           cantidad,
           color: colorCausa(valor).fill,
         })),
+      estados: ESTADOS.map((e) => ({
+        valor: e,
+        etiqueta: ETIQUETA_ESTADO[e],
+        color: PUNTO_ESTADO[e],
+        cantidad: props.filter((p) =>
+          (p.siniestros ?? []).some((s) => (s.estado ?? "DENUNCIADO") === e)
+        ).length,
+      })),
       clientes: [...new Set(props.map((p) => p.cliente).filter(Boolean))].sort() as string[],
     };
   }, [props]);
@@ -399,6 +411,7 @@ export default function MapaLotes() {
     filtros.causas.length > 0 ||
     filtros.zonas.length > 0 ||
     filtros.departamentos.length > 0 ||
+    filtros.estados.length > 0 ||
     filtros.soloSiniestros ||
     filtros.soloSeleccion;
 
@@ -410,6 +423,7 @@ export default function MapaLotes() {
     const causas = new Set(filtros.causas);
     const zonas = new Set(filtros.zonas);
     const deptos = new Set(filtros.departamentos);
+    const estadosFiltro = new Set(filtros.estados);
 
     const elegidos = new Set(seleccion);
     const visibles = new Set<string>();
@@ -427,6 +441,7 @@ export default function MapaLotes() {
       if (zonas.size && !zonas.has(it.zona)) continue;
       if (deptos.size && !deptos.has(it.departamento)) continue;
       if (causas.size && !it.causas.some((c) => causas.has(c))) continue;
+      if (estadosFiltro.size && !it.estadosCaso.some((e) => estadosFiltro.has(e))) continue;
       if (filtros.soloSiniestros && it.causas.length === 0) continue;
       if (filtros.soloSeleccion && !elegidos.has(it.id)) continue;
 
@@ -458,6 +473,7 @@ export default function MapaLotes() {
     filtros.causas,
     filtros.zonas,
     filtros.departamentos,
+    filtros.estados,
     filtros.soloSiniestros,
     filtros.soloSeleccion,
     seleccion,
@@ -578,7 +594,7 @@ export default function MapaLotes() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="z-[1100] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5">
+      <div className="relative z-[1300] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <BuscadorTexto
             valor={filtros.texto}
@@ -607,6 +623,13 @@ export default function MapaLotes() {
             seleccion={filtros.causas}
             onChange={(v) => setFiltros((f) => ({ ...f, causas: v }))}
             ancho="w-40"
+          />
+          <FiltroMulti
+            titulo="Estado"
+            opciones={opciones.estados}
+            seleccion={filtros.estados}
+            onChange={(v) => setFiltros((f) => ({ ...f, estados: v }))}
+            ancho="w-44"
           />
           <FiltroMulti
             titulo="Zona"
@@ -700,7 +723,7 @@ export default function MapaLotes() {
       </div>
 
       {/* Barra de selección */}
-      <div className="z-[1100] flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-1.5">
+      <div className="relative z-[1200] flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-1.5">
         <button
           onClick={() => {
             setModoSeleccion((v) => !v);

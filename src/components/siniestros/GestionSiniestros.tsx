@@ -15,6 +15,12 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT } from "@/lib/colores";
+import {
+  COLOR_ESTADO,
+  ESTADOS,
+  ETIQUETA_ESTADO,
+  PUNTO_ESTADO,
+} from "@/lib/siniestros";
 import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exportar";
 import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
 import { FiltroMulti } from "@/components/mapa/FiltroMulti";
@@ -55,27 +61,6 @@ export type PeritoOpcion = {
   id: string;
   nombre_completo: string | null;
   email: string | null;
-};
-
-export const ESTADOS = [
-  "DENUNCIADO",
-  "PENDIENTE_INSPECCION",
-  "CERRADO",
-  "PAGADO",
-] as const;
-
-const ETIQUETA_ESTADO: Record<string, string> = {
-  DENUNCIADO: "Denunciado",
-  PENDIENTE_INSPECCION: "Pendiente de inspección",
-  CERRADO: "Cerrado",
-  PAGADO: "Pagado",
-};
-
-const COLOR_ESTADO: Record<string, string> = {
-  DENUNCIADO: "var(--color-ink-muted)",
-  PENDIENTE_INSPECCION: "var(--color-warning)",
-  CERRADO: "var(--color-positive)",
-  PAGADO: "var(--color-accent)",
 };
 
 const num = (v: number | null | undefined, dec = 0) =>
@@ -196,6 +181,7 @@ export function GestionSiniestros({
       estados: ESTADOS.map((e) => ({
         valor: e,
         etiqueta: ETIQUETA_ESTADO[e],
+        color: PUNTO_ESTADO[e],
         cantidad: casos.filter((c) => c.estado === e).length,
       })),
       peritos: [
