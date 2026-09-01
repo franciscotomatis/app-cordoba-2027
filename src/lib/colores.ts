@@ -18,15 +18,31 @@ export function colorPorCultivo(cultivo: string | null) {
   return COLOR_CULTIVO[cultivo.trim().toLowerCase()] ?? COLOR_CULTIVO_DEFAULT;
 }
 
+const GRANIZO = { fill: "#00BCD4", borde: "#0097A7" };
+const SEQUIA = { fill: "#FF5252", borde: "#D50000" };
+const INUNDACION = { fill: "#448AFF", borde: "#2979FF" };
+const VIENTO = { fill: "#7C4DFF", borde: "#651FFF" };
+const INCENDIO = { fill: "#795548", borde: "#5D4037" };
+const HELADA = { fill: "#E8F4FA", borde: "#90A4AE" };
+
+// Se incluyen las variantes que aparecen en los datos (plural, con y sin tilde).
 export const COLOR_CAUSA: Record<string, { fill: string; borde: string }> = {
-  granizo: { fill: "#00BCD4", borde: "#0097A7" },
-  sequia: { fill: "#FF5252", borde: "#D50000" },
-  sequía: { fill: "#FF5252", borde: "#D50000" },
-  inundacion: { fill: "#448AFF", borde: "#2979FF" },
-  inundación: { fill: "#448AFF", borde: "#2979FF" },
-  viento: { fill: "#7C4DFF", borde: "#651FFF" },
-  incendio: { fill: "#795548", borde: "#5D4037" },
-  helada: { fill: "#FFFFFF", borde: "#E0E0E0" },
+  granizo: GRANIZO,
+  granizos: GRANIZO,
+  sequia: SEQUIA,
+  sequía: SEQUIA,
+  sequias: SEQUIA,
+  sequías: SEQUIA,
+  inundacion: INUNDACION,
+  inundación: INUNDACION,
+  inundaciones: INUNDACION,
+  viento: VIENTO,
+  vientos: VIENTO,
+  "viento fuerte": VIENTO,
+  incendio: INCENDIO,
+  incendios: INCENDIO,
+  helada: HELADA,
+  heladas: HELADA,
 };
 
 export const COLOR_CAUSA_DEFAULT = { fill: "#9C27B0", borde: "#7B1FA2" };

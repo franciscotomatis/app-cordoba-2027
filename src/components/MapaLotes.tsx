@@ -9,13 +9,21 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  LayersControl,
+  LayerGroup,
+  GeoJSON,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import type { Feature, FeatureCollection } from "geojson";
 import { Crosshair, Lasso, ListChecks, MousePointerClick, X } from "lucide-react";
 import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT, colorPorCultivo } from "@/lib/colores";
 import { cargarLotes, lotesEnCache } from "@/lib/datosMapa";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
+import { CapaFotos } from "./mapa/CapaFotos";
 import { FiltroMulti } from "./mapa/FiltroMulti";
 import { BuscadorTexto } from "./mapa/BuscadorTexto";
 import "leaflet/dist/leaflet.css";
@@ -286,6 +294,7 @@ export default function MapaLotes() {
   const [cargando, setCargando] = useState(!lotesEnCache());
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS);
   const [gpsActivo, setGpsActivo] = useState(false);
+  const [colorPor, setColorPor] = useState<"cultivo" | "siniestro">("cultivo");
   const [modoSeleccion, setModoSeleccion] = useState(false);
   const [modoLazo, setModoLazo] = useState(false);
   const [seleccion, setSeleccion] = useSeleccion();
@@ -334,6 +343,7 @@ export default function MapaLotes() {
         zona: p.zona?.trim() ?? "",
         departamento: p.departamento?.trim() ?? "",
         causas: (p.siniestros ?? []).map((s) => s.causa?.trim() ?? ""),
+        causaPrincipal: p.siniestros?.[0]?.causa?.trim() ?? null,
         lat: p.lat,
         lon: p.lon,
         hectareas: p.hectareas ?? 0,
@@ -405,6 +415,7 @@ export default function MapaLotes() {
     const visibles = new Set<string>();
     const puntos: [number, number][] = [];
     const porCultivo = new Map<string, number>();
+    const porCausa = new Map<string, number>();
     let hectareas = 0;
     let conSiniestro = 0;
 
@@ -425,9 +436,20 @@ export default function MapaLotes() {
       if (it.lat != null && it.lon != null) puntos.push([it.lat, it.lon]);
       const c = it.cultivo || "Sin especificar";
       porCultivo.set(c, (porCultivo.get(c) ?? 0) + it.hectareas);
+      if (it.causaPrincipal) {
+        porCausa.set(it.causaPrincipal, (porCausa.get(it.causaPrincipal) ?? 0) + it.hectareas);
+      }
     }
 
-    return { visibles, puntos, hectareas, conSiniestro, porCultivo, lotes: visibles.size };
+    return {
+      visibles,
+      puntos,
+      hectareas,
+      conSiniestro,
+      porCultivo,
+      porCausa,
+      lotes: visibles.size,
+    };
   }, [
     indice,
     textoDif,
@@ -473,6 +495,30 @@ export default function MapaLotes() {
           interactive: true,
         };
       }
+      if (colorPor === "siniestro") {
+        const causa = p.siniestros?.[0]?.causa;
+        if (!causa) {
+          // Sin siniestro: gris tenue, para que resalten los casos.
+          return {
+            color: "#8d857b",
+            fillColor: "#b8b0a6",
+            weight: 1,
+            fillOpacity: 0.25,
+            opacity: 0.6,
+            interactive: true,
+          };
+        }
+        const c = colorCausa(causa);
+        return {
+          color: c.borde,
+          fillColor: c.fill,
+          weight: 2,
+          fillOpacity: 0.7,
+          opacity: 1,
+          interactive: true,
+        };
+      }
+
       return {
         color: p.borde,
         fillColor: p.fill,
@@ -482,7 +528,7 @@ export default function MapaLotes() {
         interactive: true,
       };
     });
-  }, [recorte.visibles, seleccion]);
+  }, [recorte.visibles, seleccion, colorPor]);
 
   useEffect(() => {
     aplicarEstilos();
@@ -576,6 +622,27 @@ export default function MapaLotes() {
             onChange={(v) => setFiltros((f) => ({ ...f, departamentos: v }))}
             ancho="w-36"
           />
+
+          <div className="flex items-center gap-0.5 rounded-md border border-[var(--color-border)] p-0.5">
+            {(["cultivo", "siniestro"] as const).map((modo) => (
+              <button
+                key={modo}
+                onClick={() => setColorPor(modo)}
+                className={`rounded px-2 py-1 text-[11.5px] capitalize transition-colors ${
+                  colorPor === modo
+                    ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                    : "text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]"
+                }`}
+                title={
+                  modo === "cultivo"
+                    ? "Pintar los lotes según el cultivo"
+                    : "Pintar los lotes según la causa del siniestro"
+                }
+              >
+                {modo === "cultivo" ? "Color: cultivo" : "Color: siniestro"}
+              </button>
+            ))}
+          </div>
 
           <button
             onClick={() => setFiltros((f) => ({ ...f, soloSiniestros: !f.soloSiniestros }))}
@@ -725,23 +792,33 @@ export default function MapaLotes() {
 
         <div className="absolute right-3 bottom-8 z-[1000] max-h-64 w-52 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-2.5 shadow-sm backdrop-blur">
           <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
-            Hectáreas por cultivo
+            {colorPor === "cultivo" ? "Hectáreas por cultivo" : "Hectáreas por causa"}
           </p>
           <ul className="space-y-0.5">
-            {[...recorte.porCultivo.entries()]
+            {[...(colorPor === "cultivo" ? recorte.porCultivo : recorte.porCausa).entries()]
               .sort((a, b) => b[1] - a[1])
-              .map(([cultivo, ha]) => (
-                <li key={cultivo} className="flex items-center gap-1.5 text-[11.5px]">
+              .map(([clave, ha]) => (
+                <li key={clave} className="flex items-center gap-1.5 text-[11.5px]">
                   <span
                     className="h-2 w-2 shrink-0 rounded-sm"
-                    style={{ background: colorPorCultivo(cultivo).fill }}
+                    style={{
+                      background:
+                        colorPor === "cultivo"
+                          ? colorPorCultivo(clave).fill
+                          : colorCausa(clave).fill,
+                    }}
                   />
-                  <span className="truncate">{cultivo}</span>
+                  <span className="truncate">{clave}</span>
                   <span className="mono ml-auto text-[var(--color-ink-muted)]">
                     {Math.round(ha).toLocaleString("es-AR")}
                   </span>
                 </li>
               ))}
+            {colorPor === "siniestro" && recorte.porCausa.size === 0 && (
+              <li className="text-[11px] text-[var(--color-ink-faint)]">
+                No hay siniestros en este recorte.
+              </li>
+            )}
           </ul>
         </div>
 
@@ -784,6 +861,11 @@ export default function MapaLotes() {
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
+            <LayersControl.Overlay name="📷 Fotos de campo">
+              <LayerGroup>
+                <CapaFotos />
+              </LayerGroup>
+            </LayersControl.Overlay>
           </LayersControl>
 
           {datos && (

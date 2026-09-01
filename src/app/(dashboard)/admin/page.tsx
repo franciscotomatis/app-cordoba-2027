@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { SelectorRol } from "@/components/dashboard/SelectorRol";
-import { Panel } from "@/components/dashboard/KpiCard";
+import { PanelUsuarios, type Usuario } from "@/components/dashboard/PanelUsuarios";
+import { PanelPermisos, type FilaPermiso } from "@/components/dashboard/PanelPermisos";
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -28,48 +28,35 @@ export default async function AdminPage() {
 
   const { data: usuarios } = await supabase
     .from("profiles")
-    .select("id, nombre_completo, email, role, cliente_id")
+    .select("id, nombre_completo, email, role")
     .order("email");
 
+  const { data: permisos } = await supabase
+    .from("permisos_rol")
+    .select("rol, clave, permitido");
+
+  const hayClaveServicio = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
   return (
-    <div className="mx-auto max-w-4xl p-5">
-      <h1 className="mb-0.5 text-[17px] font-semibold">Administración</h1>
-      <p className="mb-4 text-[12px] text-[var(--color-ink-muted)]">
-        Usuarios del sistema y sus permisos.
-      </p>
+    <div className="mx-auto max-w-5xl space-y-4 p-5">
+      <div>
+        <h1 className="mb-0.5 text-[17px] font-semibold">Administración</h1>
+        <p className="text-[12px] text-[var(--color-ink-muted)]">
+          Usuarios del sistema y permisos de cada rol.
+        </p>
+      </div>
 
-      <Panel title="Usuarios">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
-              <th className="pb-2 font-medium">Email</th>
-              <th className="pb-2 font-medium">Nombre</th>
-              <th className="pb-2 font-medium">Rol</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(usuarios ?? []).map((u) => (
-              <tr key={u.id} className="border-b border-[var(--color-border)] last:border-0">
-                <td className="mono py-2 text-[var(--color-ink-muted)]">{u.email ?? "—"}</td>
-                <td className="py-2">{u.nombre_completo ?? "—"}</td>
-                <td className="py-2">
-                  <SelectorRol
-                    userId={u.id}
-                    rolActual={u.role}
-                    esUnoMismo={u.id === user.id}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
+      {!hayClaveServicio && (
+        <p className="rounded-md border border-[var(--color-warning)] px-3 py-2 text-[12px] text-[var(--color-warning)]">
+          Para crear o eliminar usuarios desde acá falta cargar la variable{" "}
+          <span className="mono">SUPABASE_SERVICE_ROLE_KEY</span> en el servidor. Mientras
+          tanto, los usuarios se crean desde Supabase (Authentication → Users) y aparecen
+          en esta lista para asignarles el rol.
+        </p>
+      )}
 
-      <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">
-        Los usuarios nuevos se crean desde Supabase (Authentication → Users) y aparecen acá
-        automáticamente con rol &quot;lectura&quot; para que les asignes el que corresponda. Nadie
-        puede cambiarse el rol a sí mismo, para que no queden cuentas sin administrador.
-      </p>
+      <PanelUsuarios usuarios={(usuarios ?? []) as Usuario[]} miId={user.id} />
+      <PanelPermisos permisos={(permisos ?? []) as FilaPermiso[]} />
     </div>
   );
 }
