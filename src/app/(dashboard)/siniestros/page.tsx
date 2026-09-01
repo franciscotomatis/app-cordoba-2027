@@ -7,7 +7,16 @@ import {
   type PeritoOpcion,
 } from "@/components/siniestros/GestionSiniestros";
 
-export default async function SiniestrosPage() {
+export default async function SiniestrosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ todos?: string }>;
+}) {
+  const { todos } = await searchParams;
+  // Por defecto solo los casos denunciados; con ?todos=1 se suman los lotes sin
+  // denuncia, que también necesitan rinde estimado para el cálculo del CUIT.
+  const incluirSinDenuncia = todos === "1";
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -23,12 +32,24 @@ export default async function SiniestrosPage() {
   const rol = perfil?.role ?? "lectura";
   const puedeEditar = rol === "admin" || rol === "perito";
 
-  const { data: casos, error } = await fetchAll<CasoSiniestro>(
+  const { data: filas, error } = await fetchAll<CasoSiniestro>(
     supabase,
-    "siniestros_gestion",
-    "*",
-    { columna: "fecha", ascendente: false }
+    "gestion_lotes",
+    "*"
   );
+
+  // Primero los casos denunciados (más recientes arriba) y después los lotes
+  // sin denuncia, para que no tapen lo que hay que gestionar.
+  const ordenadas = [...filas].sort((a, b) => {
+    if ((a.siniestro_id === null) !== (b.siniestro_id === null)) {
+      return a.siniestro_id === null ? 1 : -1;
+    }
+    return (b.fecha ?? "").localeCompare(a.fecha ?? "");
+  });
+
+  const casos = incluirSinDenuncia
+    ? ordenadas
+    : ordenadas.filter((f) => f.siniestro_id !== null);
 
   const { data: peritos } = await supabase
     .from("profiles")
@@ -38,7 +59,7 @@ export default async function SiniestrosPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-[var(--color-border)] px-5 pt-4 pb-3">
+      <div className="shrink-0 border-b border-[var(--color-border)] px-4 pt-4 pb-3 sm:px-5">
         <h1 className="mb-0.5 text-[17px] font-semibold">Gestión de siniestros</h1>
         <p className="text-[12px] text-[var(--color-ink-muted)]">
           Casos denunciados: filtrá, asigná a un perito, cambiá el estado y exportá.
@@ -53,6 +74,8 @@ export default async function SiniestrosPage() {
           peritos={(peritos ?? []) as PeritoOpcion[]}
           puedeEditar={puedeEditar}
           rol={rol}
+          incluirSinDenuncia={incluirSinDenuncia}
+          totalSinDenuncia={filas.filter((f) => f.siniestro_id === null).length}
         />
       )}
     </div>

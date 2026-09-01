@@ -33,6 +33,7 @@ import { createClient } from "@/lib/supabase/client";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
+import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
 import { FiltroMulti } from "./mapa/FiltroMulti";
 import { BuscadorTexto } from "./mapa/BuscadorTexto";
 import "leaflet/dist/leaflet.css";
@@ -81,6 +82,7 @@ type Filtros = {
   zonas: string[];
   departamentos: string[];
   estados: string[];
+  fecha: RangoFecha;
   soloSiniestros: boolean;
   soloSeleccion: boolean;
 };
@@ -93,6 +95,7 @@ const FILTROS_VACIOS: Filtros = {
   zonas: [],
   departamentos: [],
   estados: [],
+  fecha: RANGO_VACIO,
   soloSiniestros: false,
   soloSeleccion: false,
 };
@@ -143,7 +146,7 @@ function fila(etiqueta: string, valor: string, resaltar = false) {
   </div>`;
 }
 
-function contenidoPopup(p: LoteProps) {
+function contenidoPopup(p: LoteProps, editable: boolean) {
   const color = colorPorCultivo(p.cultivo);
   const ubicacion = [p.campo, p.localidad, p.departamento].filter(Boolean).join(" · ");
   const pct = p.porcentajeAsegurado != null ? ` (${num(p.porcentajeAsegurado)}%)` : "";
@@ -203,6 +206,25 @@ function contenidoPopup(p: LoteProps) {
       ${fila("Zona", escapar(p.zona ?? "—"))}
       ${fila("Estado", escapar(p.estado ?? "—"))}
     </div>
+    ${
+      editable
+        ? `<div style="border-top:1px solid var(--color-border);padding:8px 12px">
+             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--color-ink-faint);margin-bottom:4px">
+               Cargar rinde estimado
+             </div>
+             <div style="display:flex;gap:6px;align-items:center">
+               <input data-rinde-input type="text" inputmode="decimal"
+                 value="${p.rindeEstimado ?? ""}" placeholder="qq/ha"
+                 style="width:78px;padding:3px 6px;border:1px solid var(--color-border);border-radius:5px;background:var(--color-canvas);color:var(--color-ink);font-family:var(--font-jetbrains),monospace;font-size:11.5px;outline:none"/>
+               <button data-rinde-guardar="${escapar(p.id)}"
+                 style="padding:3px 9px;border:0;border-radius:5px;background:var(--color-accent);color:#fff;font-size:11.5px;font-weight:500;cursor:pointer">
+                 Guardar
+               </button>
+               <span data-rinde-estado style="font-size:11px;color:var(--color-ink-faint)"></span>
+             </div>
+           </div>`
+        : ""
+    }
     ${siniestros}
   </div>`;
 }
@@ -297,6 +319,76 @@ function Lazo({
   return null;
 }
 
+/**
+ * Los popups de Leaflet son HTML suelto, así que el formulario de rinde se
+ * conecta cuando el popup se abre. Es el patrón habitual de Leaflet.
+ */
+function EditorRindeEnPopup({
+  onGuardar,
+}: {
+  onGuardar: (loteId: string, valor: number | null) => Promise<string>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    function alAbrir(e: L.PopupEvent) {
+      const cont = e.popup.getElement();
+      if (!cont) return;
+
+      const input = cont.querySelector<HTMLInputElement>("[data-rinde-input]");
+      const boton = cont.querySelector<HTMLButtonElement>("[data-rinde-guardar]");
+      const aviso = cont.querySelector<HTMLElement>("[data-rinde-estado]");
+      if (!input || !boton) return;
+
+      // Sin esto, el mapa se lleva los clics y el teclado del formulario.
+      L.DomEvent.disableClickPropagation(cont);
+      L.DomEvent.disableScrollPropagation(cont);
+
+      const loteId = boton.dataset.rindeGuardar as string;
+
+      async function guardar() {
+        const crudo = input!.value.trim().replace(",", ".");
+        const valor = crudo === "" ? null : Number(crudo);
+
+        if (valor !== null && (!Number.isFinite(valor) || valor < 0)) {
+          if (aviso) {
+            aviso.textContent = "Valor inválido";
+            aviso.style.color = "var(--color-danger)";
+          }
+          return;
+        }
+
+        boton!.disabled = true;
+        if (aviso) {
+          aviso.textContent = "Guardando...";
+          aviso.style.color = "var(--color-ink-faint)";
+        }
+
+        const resultado = await onGuardar(loteId, valor);
+        boton!.disabled = false;
+
+        if (aviso) {
+          aviso.textContent = resultado === "" ? "Guardado" : resultado;
+          aviso.style.color =
+            resultado === "" ? "var(--color-positive)" : "var(--color-danger)";
+        }
+      }
+
+      boton.addEventListener("click", guardar);
+      input.addEventListener("keydown", (ev) => {
+        if ((ev as KeyboardEvent).key === "Enter") guardar();
+      });
+    }
+
+    map.on("popupopen", alAbrir);
+    return () => {
+      map.off("popupopen", alAbrir);
+    };
+  }, [map, onGuardar]);
+
+  return null;
+}
+
 /** Encuadra el mapa usando los centroides (mucho más barato que recorrer geometrías). */
 function Encuadre({ puntos }: { puntos: [number, number][] }) {
   const map = useMap();
@@ -333,6 +425,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const seleccionRef = useRef<string[]>(seleccion);
   const modoSeleccionRef = useRef(modoSeleccion);
   const alternarRef = useRef<(id: string) => void>(() => {});
+  const puedeCargarRindeRef = useRef(false);
 
   // Los textos se difieren: escribir no bloquea el repintado del mapa.
   const textoDif = useDeferredValue(filtros.texto);
@@ -344,6 +437,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
   useEffect(() => {
     modoSeleccionRef.current = modoSeleccion;
   }, [modoSeleccion]);
+  useEffect(() => {
+    puedeCargarRindeRef.current = puedeCargarRinde;
+  }, [puedeCargarRinde]);
 
   useEffect(() => {
     if (datos) return;
@@ -375,6 +471,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
         causas: (p.siniestros ?? []).map((s) => s.causa?.trim() ?? ""),
         causaPrincipal: p.siniestros?.[0]?.causa?.trim() ?? null,
         estadosCaso: (p.siniestros ?? []).map((s) => s.estado ?? "DENUNCIADO"),
+        fechasCaso: (p.siniestros ?? []).map((s) => s.fecha),
         lat: p.lat,
         lon: p.lon,
         hectareas: p.hectareas ?? 0,
@@ -439,6 +536,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
     filtros.zonas.length > 0 ||
     filtros.departamentos.length > 0 ||
     filtros.estados.length > 0 ||
+    Boolean(filtros.fecha.desde || filtros.fecha.hasta) ||
     filtros.soloSiniestros ||
     filtros.soloSeleccion;
 
@@ -469,6 +567,11 @@ export default function MapaLotes({ rol }: { rol: string }) {
       if (deptos.size && !deptos.has(it.departamento)) continue;
       if (causas.size && !it.causas.some((c) => causas.has(c))) continue;
       if (estadosFiltro.size && !it.estadosCaso.some((e) => estadosFiltro.has(e))) continue;
+      if (
+        (filtros.fecha.desde || filtros.fecha.hasta) &&
+        !dentroDelRango(it.fechasCaso, filtros.fecha)
+      )
+        continue;
       if (filtros.soloSiniestros && it.causas.length === 0) continue;
       if (filtros.soloSeleccion && !elegidos.has(it.id)) continue;
 
@@ -501,6 +604,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
     filtros.zonas,
     filtros.departamentos,
     filtros.estados,
+    filtros.fecha,
     filtros.soloSiniestros,
     filtros.soloSeleccion,
     seleccion,
@@ -585,7 +689,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
         alternarRef.current(p.id);
         return;
       }
-      layer.bindPopup(contenidoPopup(p), { maxWidth: 320 }).openPopup(e.latlng);
+      layer
+        .bindPopup(contenidoPopup(p, puedeCargarRindeRef.current), { maxWidth: 320 })
+        .openPopup(e.latlng);
     });
   }, []);
 
@@ -624,6 +730,30 @@ export default function MapaLotes({ rol }: { rol: string }) {
       `Rinde de ${valor} qq/ha cargado en ${seleccion.length} lote${seleccion.length > 1 ? "s" : ""}.`
     );
   }
+
+  /** Guarda el rinde de un lote desde el popup. Devuelve "" si salió bien. */
+  const guardarRindeDeLote = useCallback(
+    async (loteId: string, valor: number | null) => {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("lotes")
+        .update({
+          rinde_estimado: valor,
+          rinde_estimado_en: valor === null ? null : new Date().toISOString(),
+        })
+        .eq("id", loteId);
+
+      if (error) return error.message;
+
+      for (const f of datos?.features ?? []) {
+        const p = f.properties as LoteProps;
+        if (p.id === loteId) p.rindeEstimado = valor;
+      }
+      invalidarLotes();
+      return "";
+    },
+    [datos]
+  );
 
   const seleccionarConLazo = useCallback(
     (poligono: [number, number][]) => {
@@ -706,6 +836,12 @@ export default function MapaLotes({ rol }: { rol: string }) {
             seleccion={filtros.causas}
             onChange={(v) => setFiltros((f) => ({ ...f, causas: v }))}
             ancho="w-40"
+          />
+          <FiltroFecha
+            titulo="Fecha stro."
+            rango={filtros.fecha}
+            onChange={(r) => setFiltros((f) => ({ ...f, fecha: r }))}
+            ancho="w-48"
           />
           <FiltroMulti
             titulo="Estado"
@@ -1036,6 +1172,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
           {hayFiltros && <Encuadre puntos={recorte.puntos} />}
           <Lazo activo={modoLazo} alTerminar={seleccionarConLazo} />
+          {puedeCargarRinde && <EditorRindeEnPopup onGuardar={guardarRindeDeLote} />}
           {gpsActivo && <GpsControl />}
         </MapContainer>
       </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  Layers,
   SlidersHorizontal,
   FileDown,
   FileSpreadsheet,
@@ -31,11 +32,13 @@ import { CeldaRinde } from "./CeldaRinde";
 import { GaleriaLote } from "./GaleriaLote";
 
 export type CasoSiniestro = {
-  id: string;
+  // Una fila por lote. Si no hay denuncia, siniestro_id y los campos del
+  // siniestro vienen en null.
+  siniestro_id: string | null;
   causa: string | null;
   fecha: string | null;
   danio_estimado: number | null;
-  estado: string;
+  estado: string | null;
   perito_id: string | null;
   perito_email: string | null;
   perito_nombre: string | null;
@@ -154,7 +157,10 @@ const COLUMNAS_EXPORT: Columna<CasoSiniestro>[] = [
     clave: "estado",
     titulo: "Estado del caso",
     ancho: 20,
-    valor: (f) => ETIQUETA_ESTADO[f.estado] ?? f.estado,
+    valor: (f) =>
+      f.siniestro_id === null
+        ? "Sin denuncia"
+        : (ETIQUETA_ESTADO[f.estado ?? ""] ?? f.estado ?? ""),
   },
   {
     clave: "perito_email",
@@ -172,11 +178,15 @@ export function GestionSiniestros({
   peritos,
   puedeEditar,
   rol,
+  incluirSinDenuncia,
+  totalSinDenuncia,
 }: {
   casos: CasoSiniestro[];
   peritos: PeritoOpcion[];
   puedeEditar: boolean;
   rol: string;
+  incluirSinDenuncia: boolean;
+  totalSinDenuncia: number;
 }) {
   const router = useRouter();
 
@@ -268,7 +278,7 @@ export function GestionSiniestros({
       }
       if (cu && !soloDigitos(c.cliente_cuit ?? "").includes(cu)) return false;
       if (setCausas.size && !setCausas.has(c.causa?.trim() ?? "")) return false;
-      if (setEstados.size && !setEstados.has(c.estado)) return false;
+      if (setEstados.size && !setEstados.has(c.estado ?? "")) return false;
       if (setZonas.size && !setZonas.has(c.zona_nombre?.trim() ?? "")) return false;
       if (setPeritos.size) {
         const clave = c.perito_id ?? "sin";
@@ -290,6 +300,9 @@ export function GestionSiniestros({
 
   const totales = useMemo(
     () => ({
+      denunciados: filtrados.filter((c) => c.siniestro_id !== null).length,
+      sinDenuncia: filtrados.filter((c) => c.siniestro_id === null).length,
+      conRinde: filtrados.filter((c) => c.rinde_estimado != null).length,
       hectareas: filtrados.reduce((a, c) => a + (c.hectareas_aseguradas ?? 0), 0),
       suma: filtrados.reduce((a, c) => a + (c.suma_asegurada ?? 0), 0),
       conFotos: filtrados.filter((c) => c.fotos > 0).length,
@@ -298,17 +311,24 @@ export function GestionSiniestros({
   );
 
   const elegidosCasos = useMemo(
-    () => filtrados.filter((c) => elegidos.has(c.id)),
+    () => filtrados.filter((c) => elegidos.has(c.lote_id)),
     [filtrados, elegidos]
   );
 
-  const todosElegidos = filtrados.length > 0 && filtrados.every((c) => elegidos.has(c.id));
+  // Cambiar estado y asignar solo tienen sentido en lotes con denuncia.
+  const elegidosConDenuncia = useMemo(
+    () => elegidosCasos.filter((c) => c.siniestro_id !== null),
+    [elegidosCasos]
+  );
+
+  const todosElegidos =
+    filtrados.length > 0 && filtrados.every((c) => elegidos.has(c.lote_id));
 
   function alternarTodos() {
     setElegidos((prev) => {
       const nuevo = new Set(prev);
-      if (todosElegidos) filtrados.forEach((c) => nuevo.delete(c.id));
-      else filtrados.forEach((c) => nuevo.add(c.id));
+      if (todosElegidos) filtrados.forEach((c) => nuevo.delete(c.lote_id));
+      else filtrados.forEach((c) => nuevo.add(c.lote_id));
       return nuevo;
     });
   }
@@ -372,7 +392,7 @@ export function GestionSiniestros({
   }
 
   async function asignar() {
-    if (!peritoDestino || elegidosCasos.length === 0) return;
+    if (!peritoDestino || elegidosConDenuncia.length === 0) return;
     setGuardando(true);
     setAviso(null);
 
@@ -380,7 +400,7 @@ export function GestionSiniestros({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ids: elegidosCasos.map((c) => c.id),
+        ids: elegidosConDenuncia.map((c) => c.siniestro_id),
         peritoId: peritoDestino,
       }),
     });
@@ -471,6 +491,21 @@ export function GestionSiniestros({
           ancho="w-32"
         />
 
+        <Link
+          href={incluirSinDenuncia ? "/siniestros" : "/siniestros?todos=1"}
+          className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors ${
+            incluirSinDenuncia
+              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+              : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)]"
+          }`}
+          title="El cálculo del multirriesgo necesita el rinde de todos los lotes del CUIT, no solo de los denunciados"
+        >
+          <Layers className="h-3.5 w-3.5" />
+          {incluirSinDenuncia
+            ? "Ocultar lotes sin denuncia"
+            : `Incluir lotes sin denuncia (${totalSinDenuncia.toLocaleString("es-AR")})`}
+        </Link>
+
         {seleccionMapa.length > 0 && (
           <button
             onClick={() => setSoloSeleccionMapa((v) => !v)}
@@ -520,11 +555,11 @@ export function GestionSiniestros({
           <>
             <select
               defaultValue=""
-              disabled={guardando || elegidosCasos.length === 0}
+              disabled={guardando || elegidosConDenuncia.length === 0}
               onChange={(e) => {
                 if (e.target.value) {
                   cambiarEstado(
-                    elegidosCasos.map((c) => c.id),
+                    elegidosConDenuncia.map((c) => c.siniestro_id as string),
                     e.target.value
                   );
                   e.target.value = "";
@@ -572,7 +607,7 @@ export function GestionSiniestros({
             <div className="flex items-center gap-1">
               <select
                 value={peritoDestino}
-                disabled={guardando || elegidosCasos.length === 0}
+                disabled={guardando || elegidosConDenuncia.length === 0}
                 onChange={(e) => setPeritoDestino(e.target.value)}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] outline-none disabled:opacity-40"
               >
@@ -585,7 +620,7 @@ export function GestionSiniestros({
               </select>
               <button
                 onClick={asignar}
-                disabled={guardando || !peritoDestino || elegidosCasos.length === 0}
+                disabled={guardando || !peritoDestino || elegidosConDenuncia.length === 0}
                 className="flex items-center gap-1 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-[12px] font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
               >
                 {guardando ? (
@@ -678,21 +713,21 @@ export function GestionSiniestros({
           </thead>
           <tbody>
             {filtrados.map((c) => {
-              const elegido = elegidos.has(c.id);
+              const elegido = elegidos.has(c.lote_id);
               return (
                 <tr
-                  key={c.id}
+                  key={c.lote_id}
                   className={`border-b border-[var(--color-border)] last:border-0 ${
                     elegido
                       ? "bg-[var(--color-accent-soft)]"
                       : "hover:bg-[var(--color-surface-muted)]"
-                  }`}
+                  } ${c.siniestro_id === null ? "text-[var(--color-ink-muted)]" : ""}`}
                 >
                   <td className="px-3 py-1.5">
                     <input
                       type="checkbox"
                       checked={elegido}
-                      onChange={() => alternarUno(c.id)}
+                      onChange={() => alternarUno(c.lote_id)}
                       className="accent-[var(--color-accent)]"
                       aria-label={`Seleccionar lote ${c.id_lote_externo}`}
                     />
@@ -718,13 +753,19 @@ export function GestionSiniestros({
                     </div>
                   </td>
                   <td className="px-2 py-1.5">
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-sm"
-                        style={{ background: colorCausa(c.causa).fill }}
-                      />
-                      {c.causa ?? "—"}
-                    </span>
+                    {c.siniestro_id === null ? (
+                      <span className="rounded bg-[var(--color-surface-muted)] px-1.5 py-0.5 text-[10.5px] text-[var(--color-ink-faint)]">
+                        Sin denuncia
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-sm"
+                          style={{ background: colorCausa(c.causa).fill }}
+                        />
+                        {c.causa ?? "—"}
+                      </span>
+                    )}
                   </td>
                   <td className="mono px-2 py-1.5 text-[var(--color-ink-muted)]">
                     {fechaCorta(c.fecha)}
@@ -744,12 +785,16 @@ export function GestionSiniestros({
                   </td>
                   <td className="mono px-2 py-1.5 text-right">{num(c.danio_estimado)}</td>
                   <td className="px-2 py-1.5">
-                    {puedeEditar ? (
+                    {c.siniestro_id === null ? (
+                      <span className="text-[var(--color-ink-faint)]">—</span>
+                    ) : puedeEditar ? (
                       <select
-                        value={c.estado}
-                        onChange={(e) => cambiarEstado([c.id], e.target.value)}
+                        value={c.estado ?? "DENUNCIADO"}
+                        onChange={(e) =>
+                          cambiarEstado([c.siniestro_id as string], e.target.value)
+                        }
                         className="rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] outline-none hover:border-[var(--color-border)] focus:border-[var(--color-accent)]"
-                        style={{ color: COLOR_ESTADO[c.estado] }}
+                        style={{ color: COLOR_ESTADO[c.estado ?? ""] }}
                       >
                         {ESTADOS.map((e) => (
                           <option key={e} value={e} className="text-[var(--color-ink)]">
@@ -758,8 +803,8 @@ export function GestionSiniestros({
                         ))}
                       </select>
                     ) : (
-                      <span style={{ color: COLOR_ESTADO[c.estado] }}>
-                        {ETIQUETA_ESTADO[c.estado] ?? c.estado}
+                      <span style={{ color: COLOR_ESTADO[c.estado ?? ""] }}>
+                        {ETIQUETA_ESTADO[c.estado ?? ""] ?? c.estado}
                       </span>
                     )}
                   </td>
