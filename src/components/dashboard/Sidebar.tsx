@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Map,
-  Sprout,
   Users,
+  ClipboardList,
   Camera,
   HardHat,
   Settings,
@@ -22,8 +22,8 @@ type Item = {
 const ITEMS: Item[] = [
   { href: "/", label: "Resumen", icon: LayoutDashboard },
   { href: "/mapa", label: "Mapa", icon: Map },
-  { href: "/lotes", label: "Lotes", icon: Sprout },
   { href: "/clientes", label: "Clientes", icon: Users, roles: ["admin", "perito", "lectura"] },
+  { href: "/siniestros", label: "Gestión de siniestros", icon: ClipboardList },
   { href: "/fotos", label: "Fotos", icon: Camera },
   { href: "/peritos", label: "Peritos", icon: HardHat, roles: ["admin", "perito", "lectura"] },
   { href: "/admin", label: "Administración", icon: Settings, roles: ["admin"] },

@@ -4,7 +4,13 @@ import { fetchAll } from "@/lib/supabase/fetchAll";
 import { colorPorCultivo } from "@/lib/colores";
 import type { Geometry } from "geojson";
 
-type Siniestro = { causa: string; fecha: string | null; danio_estimado: number | null };
+type Siniestro = {
+  id: string;
+  causa: string;
+  fecha: string | null;
+  danio_estimado: number | null;
+  estado: string | null;
+};
 
 type LoteMapa = {
   id: string;
@@ -26,6 +32,8 @@ type LoteMapa = {
   cliente_nombre: string | null;
   cliente_cuit: string | null;
   zona_nombre: string | null;
+  lat: number | null;
+  lon: number | null;
   geometry: Geometry;
   siniestros: Siniestro[];
 };
@@ -50,6 +58,8 @@ const COLUMNAS = [
   "cliente_nombre",
   "cliente_cuit",
   "zona_nombre",
+  "lat",
+  "lon",
   "geometry",
   "siniestros",
 ].join(", ");
@@ -88,6 +98,8 @@ export async function GET() {
         cliente: l.cliente_nombre,
         cuit: l.cliente_cuit,
         zona: l.zona_nombre,
+        lat: l.lat,
+        lon: l.lon,
         siniestros: l.siniestros ?? [],
         fill: color.fill,
         borde: color.borde,
