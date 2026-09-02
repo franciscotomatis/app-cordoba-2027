@@ -7,7 +7,9 @@ export async function fetchAll<T>(
   supabase: SupabaseClient,
   tabla: string,
   columnas: string,
-  orden?: { columna: string; ascendente?: boolean }
+  orden?: { columna: string; ascendente?: boolean },
+  /** Filtros de igualdad, para no traer filas que después se descartan. */
+  igual?: Record<string, string | number | boolean>
 ): Promise<{ data: T[]; error: string | null }> {
   const filas: T[] = [];
 
@@ -19,6 +21,9 @@ export async function fetchAll<T>(
 
     if (orden) {
       query = query.order(orden.columna, { ascending: orden.ascendente ?? true });
+    }
+    for (const [columna, valor] of Object.entries(igual ?? {})) {
+      query = query.eq(columna, valor);
     }
 
     const { data, error } = await query;

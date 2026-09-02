@@ -229,17 +229,69 @@ function contenidoPopup(p: LoteProps, editable: boolean) {
   </div>`;
 }
 
-function GpsControl() {
+/**
+ * Muestra la ubicación del dispositivo: un punto con su círculo de precisión.
+ * Centra el mapa solo la primera vez, para no pelear con el paneo del usuario.
+ */
+function GpsControl({ onError }: { onError: (m: string) => void }) {
   const map = useMap();
+
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      onError("Este navegador no permite geolocalización.");
+      return;
+    }
+
+    const punto = L.circleMarker([0, 0], {
+      radius: 6,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#2979ff",
+      fillOpacity: 1,
+      interactive: false,
+    });
+    const precision = L.circle([0, 0], {
+      radius: 0,
+      color: "#2979ff",
+      weight: 1,
+      fillColor: "#2979ff",
+      fillOpacity: 0.12,
+      interactive: false,
+    });
+
+    let primera = true;
+
     const id = navigator.geolocation.watchPosition(
-      (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 15, { animate: true }),
-      () => {},
-      { enableHighAccuracy: true }
+      (pos) => {
+        const centro: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+
+        if (primera) {
+          punto.addTo(map);
+          precision.addTo(map);
+          map.setView(centro, Math.max(map.getZoom(), 14), { animate: true });
+          primera = false;
+        }
+
+        punto.setLatLng(centro);
+        precision.setLatLng(centro).setRadius(pos.coords.accuracy || 0);
+      },
+      (err) => {
+        onError(
+          err.code === err.PERMISSION_DENIED
+            ? "Tenés que permitir el acceso a la ubicación en el navegador."
+            : "No se pudo obtener la ubicación."
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 }
     );
-    return () => navigator.geolocation.clearWatch(id);
-  }, [map]);
+
+    return () => {
+      navigator.geolocation.clearWatch(id);
+      map.removeLayer(punto);
+      map.removeLayer(precision);
+    };
+  }, [map, onError]);
+
   return null;
 }
 
@@ -792,7 +844,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="relative z-[1300] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-4 sm:py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <BuscadorTexto
             valor={filtros.texto}
             onChange={(v) => setFiltros((f) => ({ ...f, texto: v }))}
@@ -921,7 +974,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
           )}
           </div>
 
-          <div className="ml-auto flex items-baseline gap-1.5 text-[12px]">
+          </div>
+
+          <div className="flex shrink-0 items-baseline gap-1.5 pt-1.5 text-[12px] whitespace-nowrap">
             <span className="mono text-[13px] font-semibold">
               {recorte.lotes.toLocaleString("es-AR")}
             </span>
@@ -1115,7 +1170,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
         <button
           onClick={() => setGpsActivo((v) => !v)}
-          title="Seguir mi ubicación"
+          title={gpsActivo ? "Ocultar mi ubicación" : "Mostrar mi ubicación"}
           className={`absolute bottom-8 left-3 z-[1000] flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] shadow-sm transition-colors ${
             gpsActivo
               ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
@@ -1173,7 +1228,14 @@ export default function MapaLotes({ rol }: { rol: string }) {
           {hayFiltros && <Encuadre puntos={recorte.puntos} />}
           <Lazo activo={modoLazo} alTerminar={seleccionarConLazo} />
           {puedeCargarRinde && <EditorRindeEnPopup onGuardar={guardarRindeDeLote} />}
-          {gpsActivo && <GpsControl />}
+          {gpsActivo && (
+            <GpsControl
+              onError={(m) => {
+                setAvisoRinde(m);
+                setGpsActivo(false);
+              }}
+            />
+          )}
         </MapContainer>
       </div>
     </div>

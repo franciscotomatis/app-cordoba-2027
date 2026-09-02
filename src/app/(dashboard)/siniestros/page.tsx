@@ -33,10 +33,14 @@ export default async function SiniestrosPage({
   const rol = perfil?.role ?? "lectura";
   const puedeEditar = rol === "admin" || rol === "perito";
 
+  // Solo las filas de unidades CUIT+cultivo con al menos un caso: son las
+  // únicas que se muestran, así que no tiene sentido traer el programa entero.
   const { data: filas, error } = await fetchAll<CasoSiniestro>(
     supabase,
     "gestion_lotes",
-    "*"
+    "*",
+    undefined,
+    { unidad_con_denuncia: true }
   );
 
   // Primero los casos denunciados (más recientes arriba) y después los lotes
@@ -48,11 +52,9 @@ export default async function SiniestrosPage({
     return (b.fecha ?? "").localeCompare(a.fecha ?? "");
   });
 
-  const deUnidadesConDenuncia = ordenadas.filter((f) => f.unidad_con_denuncia);
-
   const casos = incluirSinDenuncia
-    ? deUnidadesConDenuncia
-    : deUnidadesConDenuncia.filter((f) => f.siniestro_id !== null);
+    ? ordenadas
+    : ordenadas.filter((f) => f.siniestro_id !== null);
 
   const { data: peritos } = await supabase
     .from("profiles")
@@ -78,9 +80,7 @@ export default async function SiniestrosPage({
           puedeEditar={puedeEditar}
           rol={rol}
           incluirSinDenuncia={incluirSinDenuncia}
-          totalSinDenuncia={
-            deUnidadesConDenuncia.filter((f) => f.siniestro_id === null).length
-          }
+          totalSinDenuncia={ordenadas.filter((f) => f.siniestro_id === null).length}
         />
       )}
     </div>

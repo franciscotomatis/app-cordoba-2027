@@ -257,6 +257,20 @@ export function GestionSiniestros({
     };
   }, [casos, peritos]);
 
+  // Unidades CUIT+cultivo de los lotes elegidos en el mapa: al incluir los lotes
+  // sin denuncia hay que traer los del mismo negocio, no solo los clickeados.
+  const claveUnidad = (c: CasoSiniestro) =>
+    `${c.cliente_cuit ?? c.cliente_nombre ?? ""}|${c.cultivo?.trim() ?? ""}`;
+
+  const unidadesDeLaSeleccion = useMemo(() => {
+    const elegidosMapa = new Set(seleccionMapa);
+    const unidades = new Set<string>();
+    for (const c of casos) {
+      if (elegidosMapa.has(c.lote_id)) unidades.add(claveUnidad(c));
+    }
+    return unidades;
+  }, [casos, seleccionMapa]);
+
   const filtrados = useMemo(() => {
     const q = textoDif.trim().toLowerCase();
     const cu = soloDigitos(cuitDif);
@@ -268,7 +282,13 @@ export function GestionSiniestros({
     const setMapa = new Set(seleccionMapa);
 
     return casos.filter((c) => {
-      if (soloSeleccionMapa && !setMapa.has(c.lote_id)) return false;
+      if (soloSeleccionMapa) {
+        const esElegido = setMapa.has(c.lote_id);
+        // Con los lotes sin denuncia visibles, entra todo el CUIT+cultivo.
+        const esDeLaMismaUnidad =
+          incluirSinDenuncia && unidadesDeLaSeleccion.has(claveUnidad(c));
+        if (!esElegido && !esDeLaMismaUnidad) return false;
+      }
       if (q) {
         const busca = [
           c.cliente_nombre,
@@ -305,6 +325,8 @@ export function GestionSiniestros({
     peritosFiltro,
     soloSeleccionMapa,
     seleccionMapa,
+    incluirSinDenuncia,
+    unidadesDeLaSeleccion,
   ]);
 
   const totales = useMemo(
@@ -395,6 +417,32 @@ export function GestionSiniestros({
       valor === null
         ? `Se borró el rinde estimado de ${loteIds.length} lote${loteIds.length > 1 ? "s" : ""}.`
         : `Rinde estimado de ${valor} qq/ha cargado en ${loteIds.length} lote${loteIds.length > 1 ? "s" : ""}.`
+    );
+    invalidarLotes();
+    router.refresh();
+  }
+
+  /** Quita el perito asignado y devuelve el caso a "Denunciado". */
+  async function quitarAsignacion(ids: string[]) {
+    if (ids.length === 0) return;
+    setGuardando(true);
+    setAviso(null);
+
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("siniestros")
+      .update({ perito_id: null, asignado_en: null, estado: "DENUNCIADO" })
+      .in("id", ids);
+
+    setGuardando(false);
+
+    if (error) {
+      setAviso(`No se pudo quitar la asignación: ${error.message}`);
+      return;
+    }
+
+    setAviso(
+      `${ids.length} caso${ids.length > 1 ? "s" : ""} sin perito asignado, de vuelta en "Denunciado".`
     );
     invalidarLotes();
     router.refresh();
@@ -508,7 +556,11 @@ export function GestionSiniestros({
         />
 
         <Link
-          href={incluirSinDenuncia ? "/siniestros" : "/siniestros?todos=1"}
+          href={
+            incluirSinDenuncia
+              ? `/siniestros${soloSeleccionMapa ? "?seleccion=1" : ""}`
+              : `/siniestros?todos=1${soloSeleccionMapa ? "&seleccion=1" : ""}`
+          }
           className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors ${
             incluirSinDenuncia
               ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
@@ -517,9 +569,7 @@ export function GestionSiniestros({
           title="El multirriesgo se liquida por CUIT y cultivo: suma los demás lotes de esa misma combinación, que también necesitan rinde estimado"
         >
           <Layers className="h-3.5 w-3.5" />
-          {incluirSinDenuncia
-            ? "Ocultar lotes sin denuncia"
-            : `Incluir lotes sin denuncia (${totalSinDenuncia.toLocaleString("es-AR")})`}
+          {incluirSinDenuncia ? "Ocultar lotes sin denuncia" : "Incluir lotes sin denuncia"}
         </Link>
 
         {seleccionMapa.length > 0 && (
@@ -628,6 +678,7 @@ export function GestionSiniestros({
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] outline-none disabled:opacity-40"
               >
                 <option value="">Asignar a perito…</option>
+                <option value="__quitar__">— Quitar asignación —</option>
                 {peritos.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nombre_completo || p.email}
@@ -635,7 +686,15 @@ export function GestionSiniestros({
                 ))}
               </select>
               <button
-                onClick={asignar}
+                onClick={() =>
+                  peritoDestino === "__quitar__"
+                    ? quitarAsignacion(
+                        elegidosConDenuncia
+                          .filter((c) => c.perito_id !== null)
+                          .map((c) => c.siniestro_id as string)
+                      )
+                    : asignar()
+                }
                 disabled={guardando || !peritoDestino || elegidosConDenuncia.length === 0}
                 className="flex items-center gap-1 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-[12px] font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
               >
@@ -644,7 +703,7 @@ export function GestionSiniestros({
                 ) : (
                   <Send className="h-3.5 w-3.5" />
                 )}
-                Asignar
+                {peritoDestino === "__quitar__" ? "Quitar" : "Asignar"}
               </button>
             </div>
           </>
@@ -835,7 +894,24 @@ export function GestionSiniestros({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-[11.5px] text-[var(--color-ink-muted)]">
-                    {c.perito_nombre || c.perito_email || (
+                    {c.perito_id ? (
+                      <span className="flex items-center gap-1">
+                        <span className="truncate">
+                          {c.perito_nombre || c.perito_email}
+                        </span>
+                        {puedeEditar && (
+                          <button
+                            onClick={() =>
+                              quitarAsignacion([c.siniestro_id as string])
+                            }
+                            title="Quitar la asignación"
+                            className="shrink-0 rounded p-0.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-danger)]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </span>
+                    ) : (
                       <span className="text-[var(--color-ink-faint)]">sin asignar</span>
                     )}
                   </td>

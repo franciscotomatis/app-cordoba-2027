@@ -46,3 +46,6 @@ next-env.d.ts
 
 # capturas de QA local
 .qa/
+
+# archivos temporales de chequeos
+.tmp_*/
