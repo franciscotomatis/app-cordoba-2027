@@ -32,6 +32,7 @@ import { cargarLotes, invalidarLotes, lotesEnCache } from "@/lib/datosMapa";
 import { createClient } from "@/lib/supabase/client";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
+import { CapaLimites } from "./mapa/CapaLimites";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
 import { FiltroMulti } from "./mapa/FiltroMulti";
@@ -1207,6 +1208,18 @@ export default function MapaLotes({ rol }: { rol: string }) {
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
+            <LayersControl.Overlay name="Límite de Córdoba">
+              <LayerGroup>
+                <CapaLimites tipo="provincia" />
+              </LayerGroup>
+            </LayersControl.Overlay>
+
+            <LayersControl.Overlay name="Departamentos">
+              <LayerGroup>
+                <CapaLimites tipo="departamentos" />
+              </LayerGroup>
+            </LayersControl.Overlay>
+
             <LayersControl.Overlay name="📷 Fotos de campo">
               <LayerGroup>
                 <CapaFotos />

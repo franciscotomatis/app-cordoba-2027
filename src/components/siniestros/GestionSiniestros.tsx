@@ -422,34 +422,31 @@ export function GestionSiniestros({
     router.refresh();
   }
 
-  /** Quita el perito asignado y devuelve el caso a "Denunciado". */
-  async function quitarAsignacion(ids: string[]) {
-    if (ids.length === 0) return;
+  /** Quita el perito de un lote puntual (y de su caso, si tiene). */
+  async function quitarAsignacionDeLote(loteId: string) {
     setGuardando(true);
     setAviso(null);
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("siniestros")
-      .update({ perito_id: null, asignado_en: null, estado: "DENUNCIADO" })
-      .in("id", ids);
-
+    const respuesta = await fetch("/api/siniestros/asignar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loteIds: [loteId], peritoId: null }),
+    });
+    const datos = await respuesta.json();
     setGuardando(false);
 
-    if (error) {
-      setAviso(`No se pudo quitar la asignación: ${error.message}`);
+    if (!respuesta.ok) {
+      setAviso(datos.error ?? "No se pudo quitar la asignación.");
       return;
     }
-
-    setAviso(
-      `${ids.length} caso${ids.length > 1 ? "s" : ""} sin perito asignado, de vuelta en "Denunciado".`
-    );
+    setAviso("Lote sin perito asignado.");
     invalidarLotes();
     router.refresh();
   }
 
-  async function asignar() {
-    if (!peritoDestino || elegidosConDenuncia.length === 0) return;
+  /** Asigna (o desasigna con peritoId null) los LOTES elegidos, con o sin denuncia. */
+  async function asignar(peritoId: string | null) {
+    if (elegidosCasos.length === 0) return;
     setGuardando(true);
     setAviso(null);
 
@@ -457,8 +454,8 @@ export function GestionSiniestros({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ids: elegidosConDenuncia.map((c) => c.siniestro_id),
-        peritoId: peritoDestino,
+        loteIds: [...new Set(elegidosCasos.map((c) => c.lote_id))],
+        peritoId,
       }),
     });
 
@@ -470,11 +467,18 @@ export function GestionSiniestros({
       return;
     }
 
-    setAviso(
-      datos.emailEnviado
-        ? `${datos.asignados} casos asignados y notificados por correo.`
-        : `${datos.asignados} casos asignados. ${datos.motivoEmail ?? ""}`
-    );
+    if (datos.quitado) {
+      setAviso(`${datos.lotes} lotes sin perito asignado.`);
+    } else {
+      const detalle = `${datos.lotes} lotes asignados (${datos.casos} con denuncia)`;
+      setAviso(
+        datos.emailEnviado
+          ? `${detalle} y notificados por correo.`
+          : `${detalle}. ${datos.motivoEmail ?? ""}`
+      );
+    }
+
+    setPeritoDestino("");
     invalidarLotes();
     router.refresh();
   }
@@ -673,7 +677,7 @@ export function GestionSiniestros({
             <div className="flex items-center gap-1">
               <select
                 value={peritoDestino}
-                disabled={guardando || elegidosConDenuncia.length === 0}
+                disabled={guardando || elegidosCasos.length === 0}
                 onChange={(e) => setPeritoDestino(e.target.value)}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] outline-none disabled:opacity-40"
               >
@@ -687,15 +691,9 @@ export function GestionSiniestros({
               </select>
               <button
                 onClick={() =>
-                  peritoDestino === "__quitar__"
-                    ? quitarAsignacion(
-                        elegidosConDenuncia
-                          .filter((c) => c.perito_id !== null)
-                          .map((c) => c.siniestro_id as string)
-                      )
-                    : asignar()
+                  asignar(peritoDestino === "__quitar__" ? null : peritoDestino)
                 }
-                disabled={guardando || !peritoDestino || elegidosConDenuncia.length === 0}
+                disabled={guardando || !peritoDestino || elegidosCasos.length === 0}
                 className="flex items-center gap-1 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-[12px] font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
               >
                 {guardando ? (
@@ -901,9 +899,7 @@ export function GestionSiniestros({
                         </span>
                         {puedeEditar && (
                           <button
-                            onClick={() =>
-                              quitarAsignacion([c.siniestro_id as string])
-                            }
+                            onClick={() => quitarAsignacionDeLote(c.lote_id)}
                             title="Quitar la asignación"
                             className="shrink-0 rounded p-0.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-danger)]"
                           >
