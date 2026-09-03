@@ -33,6 +33,7 @@ import { createClient } from "@/lib/supabase/client";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
 import { CapaLimites } from "./mapa/CapaLimites";
+import { PanelLote, type LoteDetalle } from "./mapa/PanelLote";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
 import { FiltroMulti } from "./mapa/FiltroMulti";
@@ -223,9 +224,19 @@ function contenidoPopup(p: LoteProps, editable: boolean) {
                </button>
                <span data-rinde-estado style="font-size:11px;color:var(--color-ink-faint)"></span>
              </div>
+             <button data-foto-lote="${escapar(p.id)}"
+               style="margin-top:8px;width:100%;padding:5px;border:1px solid var(--color-border);border-radius:5px;background:transparent;color:var(--color-ink-muted);font-size:11.5px;cursor:pointer">
+               Agregar foto a este lote
+             </button>
            </div>`
         : ""
     }
+    <div style="border-top:1px solid var(--color-border);padding:7px 12px">
+      <button data-ampliar-lote="${escapar(p.id)}"
+        style="width:100%;padding:5px;border:0;border-radius:5px;background:var(--color-surface-muted);color:var(--color-ink);font-size:11.5px;font-weight:500;cursor:pointer">
+        Ver ficha completa y clima
+      </button>
+    </div>
     ${siniestros}
   </div>`;
 }
@@ -378,8 +389,12 @@ function Lazo({
  */
 function EditorRindeEnPopup({
   onGuardar,
+  onAmpliar,
+  onFoto,
 }: {
   onGuardar: (loteId: string, valor: number | null) => Promise<string>;
+  onAmpliar: (loteId: string) => void;
+  onFoto: (loteId: string) => void;
 }) {
   const map = useMap();
 
@@ -388,14 +403,26 @@ function EditorRindeEnPopup({
       const cont = e.popup.getElement();
       if (!cont) return;
 
+      // Sin esto, el mapa se lleva los clics y el teclado del formulario.
+      L.DomEvent.disableClickPropagation(cont);
+      L.DomEvent.disableScrollPropagation(cont);
+
+      const ampliar = cont.querySelector<HTMLButtonElement>("[data-ampliar-lote]");
+      if (ampliar) {
+        ampliar.addEventListener("click", () =>
+          onAmpliar(ampliar.dataset.ampliarLote as string)
+        );
+      }
+
+      const foto = cont.querySelector<HTMLButtonElement>("[data-foto-lote]");
+      if (foto) {
+        foto.addEventListener("click", () => onFoto(foto.dataset.fotoLote as string));
+      }
+
       const input = cont.querySelector<HTMLInputElement>("[data-rinde-input]");
       const boton = cont.querySelector<HTMLButtonElement>("[data-rinde-guardar]");
       const aviso = cont.querySelector<HTMLElement>("[data-rinde-estado]");
       if (!input || !boton) return;
-
-      // Sin esto, el mapa se lleva los clics y el teclado del formulario.
-      L.DomEvent.disableClickPropagation(cont);
-      L.DomEvent.disableScrollPropagation(cont);
 
       const loteId = boton.dataset.rindeGuardar as string;
 
@@ -437,7 +464,7 @@ function EditorRindeEnPopup({
     return () => {
       map.off("popupopen", alAbrir);
     };
-  }, [map, onGuardar]);
+  }, [map, onGuardar, onAmpliar, onFoto]);
 
   return null;
 }
@@ -472,6 +499,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [guardandoRinde, setGuardandoRinde] = useState(false);
   const [avisoRinde, setAvisoRinde] = useState<string | null>(null);
+  const [fichaLote, setFichaLote] = useState<LoteDetalle | null>(null);
+  const [loteFoto, setLoteFoto] = useState<string | null>(null);
+  const inputFotoRef = useRef<HTMLInputElement>(null);
   const [seleccion, setSeleccion] = useSeleccion();
 
   const capaRef = useRef<L.GeoJSON | null>(null);
@@ -808,6 +838,69 @@ export default function MapaLotes({ rol }: { rol: string }) {
     [datos]
   );
 
+  const abrirFicha = useCallback(
+    (loteId: string) => {
+      const f = datos?.features.find((x) => (x.properties as LoteProps).id === loteId);
+      if (f) setFichaLote(f.properties as unknown as LoteDetalle);
+    },
+    [datos]
+  );
+
+  /** Sube una foto y la asocia al lote elegido desde el popup. */
+  async function subirFotoDeLote(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    if (!archivo || !loteFoto) return;
+
+    setAvisoRinde("Subiendo foto...");
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setAvisoRinde("Sesión vencida, volvé a entrar.");
+      return;
+    }
+
+    const extension = archivo.name.split(".").pop()?.toLowerCase() || "jpg";
+    const ruta = `${user.id}/${Date.now()}.${extension}`;
+
+    const { error: errorSubida } = await supabase.storage
+      .from("fotos")
+      .upload(ruta, archivo, { contentType: archivo.type || "image/jpeg" });
+
+    if (errorSubida) {
+      setAvisoRinde(`No se pudo subir la foto: ${errorSubida.message}`);
+      return;
+    }
+
+    const coords = await new Promise<GeolocationCoordinates | null>((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(pos.coords),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    });
+
+    const { error: errorFila } = await supabase.from("fotos").insert({
+      lote_id: loteFoto,
+      storage_path: ruta,
+      nombre_original: archivo.name,
+      subido_por: user.id,
+      geom: coords ? `SRID=4326;POINT(${coords.longitude} ${coords.latitude})` : null,
+    });
+
+    if (e.target) e.target.value = "";
+    setLoteFoto(null);
+
+    setAvisoRinde(
+      errorFila
+        ? `La imagen se subió pero no se registró: ${errorFila.message}`
+        : "Foto agregada al lote."
+    );
+  }
+
   const seleccionarConLazo = useCallback(
     (poligono: [number, number][]) => {
       const nuevos = new Set(seleccionRef.current);
@@ -1137,7 +1230,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
           </div>
         )}
 
-        <div className="absolute right-3 bottom-8 z-[1000] max-h-64 w-52 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-2.5 shadow-sm backdrop-blur">
+        <div className="absolute right-3 bottom-8 z-[1000] max-h-64 w-auto min-w-36 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-2.5 py-2 shadow-sm backdrop-blur">
           <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
             {colorPor === "cultivo" ? "Hectáreas por cultivo" : "Hectáreas por causa"}
           </p>
@@ -1145,7 +1238,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
             {[...(colorPor === "cultivo" ? recorte.porCultivo : recorte.porCausa).entries()]
               .sort((a, b) => b[1] - a[1])
               .map(([clave, ha]) => (
-                <li key={clave} className="flex items-center gap-1.5 text-[11.5px]">
+                <li key={clave} className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap">
                   <span
                     className="h-2 w-2 shrink-0 rounded-sm"
                     style={{
@@ -1155,8 +1248,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
                           : colorCausa(clave).fill,
                     }}
                   />
-                  <span className="truncate">{clave}</span>
-                  <span className="mono ml-auto text-[var(--color-ink-muted)]">
+                  <span>{clave}</span>
+                  <span className="mono ml-2 text-[var(--color-ink-muted)]">
                     {Math.round(ha).toLocaleString("es-AR")}
                   </span>
                 </li>
@@ -1240,7 +1333,14 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
           {hayFiltros && <Encuadre puntos={recorte.puntos} />}
           <Lazo activo={modoLazo} alTerminar={seleccionarConLazo} />
-          {puedeCargarRinde && <EditorRindeEnPopup onGuardar={guardarRindeDeLote} />}
+          <EditorRindeEnPopup
+            onGuardar={guardarRindeDeLote}
+            onAmpliar={abrirFicha}
+            onFoto={(id) => {
+              setLoteFoto(id);
+              inputFotoRef.current?.click();
+            }}
+          />
           {gpsActivo && (
             <GpsControl
               onError={(m) => {
@@ -1251,6 +1351,33 @@ export default function MapaLotes({ rol }: { rol: string }) {
           )}
         </MapContainer>
       </div>
+
+      <input
+        ref={inputFotoRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={subirFotoDeLote}
+        className="hidden"
+      />
+
+      {fichaLote && (
+        <PanelLote
+          lote={fichaLote}
+          puedeEditar={puedeCargarRinde}
+          onCerrar={() => setFichaLote(null)}
+          onRindeGuardado={(loteId, valor) => {
+            for (const f of datos?.features ?? []) {
+              const p = f.properties as LoteProps;
+              if (p.id === loteId) p.rindeEstimado = valor;
+            }
+            invalidarLotes();
+            setFichaLote((actual) =>
+              actual && actual.id === loteId ? { ...actual, rindeEstimado: valor } : actual
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

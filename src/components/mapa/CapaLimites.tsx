@@ -38,7 +38,7 @@ export function CapaLimites({ tipo }: { tipo: Tipo }) {
   return (
     <GeoJSON
       data={datos}
-      interactive={!esProvincia}
+      interactive={false}
       style={{
         color: esProvincia ? "#d97757" : "#f0ece6",
         weight: esProvincia ? 2.5 : 1,
@@ -49,7 +49,13 @@ export function CapaLimites({ tipo }: { tipo: Tipo }) {
       onEachFeature={(feature, layer) => {
         const nombre = (feature.properties as { nam?: string })?.nam;
         if (!nombre || esProvincia) return;
-        layer.bindTooltip(nombre, { sticky: true, direction: "top" });
+        // Etiqueta fija en el centro del departamento, solo como referencia:
+        // gris tenue y sin capturar clics para no tapar los lotes.
+        layer.bindTooltip(nombre, {
+          permanent: true,
+          direction: "center",
+          className: "etiqueta-departamento",
+        });
       }}
     />
   );

@@ -164,3 +164,24 @@ body {
   color: var(--color-ink-faint) !important;
   font-size: 10px;
 }
+
+/* Nombre del departamento: referencia discreta sobre el mapa, sin fondo ni
+   borde, y sin interceptar el mouse. */
+.leaflet-tooltip.etiqueta-departamento {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--color-ink-faint);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 0.55),
+    0 0 2px rgb(0 0 0 / 0.4);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.leaflet-tooltip.etiqueta-departamento::before {
+  display: none;
+}
