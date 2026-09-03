@@ -31,10 +31,10 @@ export async function GET(
     return NextResponse.json({ error: "Lote sin geometría" }, { status: 404 });
   }
 
-  const ruta = `ndvi/${loteId}/${fecha}.png`;
+  const ruta = `${loteId}/${fecha}.png`;
 
   // Si ya se pidió esa imagen antes, se sirve la guardada.
-  const { data: guardada } = await supabase.storage.from("fotos").download(ruta);
+  const { data: guardada } = await supabase.storage.from("ndvi").download(ruta);
   if (guardada) {
     return new NextResponse(await guardada.arrayBuffer(), {
       headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" },
@@ -51,9 +51,15 @@ export async function GET(
   try {
     const png = await imagenNdvi(lote.geometry as Geometry, fecha);
 
-    await supabase.storage
-      .from("fotos")
+    const { error: errorGuardado } = await supabase.storage
+      .from("ndvi")
       .upload(ruta, png, { contentType: "image/png", upsert: true });
+
+    // Si no se pudo cachear igual se devuelve la imagen: lo único que se
+    // pierde es tener que volver a pedirla la próxima vez.
+    if (errorGuardado) {
+      console.warn("No se pudo cachear la imagen NDVI:", errorGuardado.message);
+    }
 
     return new NextResponse(png, {
       headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" },
