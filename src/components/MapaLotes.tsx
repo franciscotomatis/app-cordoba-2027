@@ -854,7 +854,12 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const abrirFicha = useCallback(
     (loteId: string) => {
       const f = datos?.features.find((x) => (x.properties as LoteProps).id === loteId);
-      if (f) setFichaLote(f.properties as unknown as LoteDetalle);
+      if (f) {
+        setFichaLote({
+          ...(f.properties as unknown as LoteDetalle),
+          geometria: f.geometry,
+        });
+      }
     },
     [datos]
   );

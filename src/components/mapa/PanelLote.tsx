@@ -18,6 +18,8 @@ import { Camera, Loader2, Maximize2, Minimize2, Upload, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { colorPorCultivo, COLOR_CAUSA, COLOR_CAUSA_DEFAULT } from "@/lib/colores";
 import { ETIQUETA_ESTADO } from "@/lib/siniestros";
+import { SeccionNdvi } from "./SeccionNdvi";
+import type { Geometry } from "geojson";
 
 export type LoteDetalle = {
   id: string;
@@ -46,6 +48,8 @@ export type LoteDetalle = {
     danio_estimado: number | null;
     estado: string | null;
   }[];
+  /** Se pasa desde el mapa para dibujar el lote y recortar la imagen satelital. */
+  geometria?: Geometry | null;
 };
 
 type Clima = {
@@ -653,6 +657,8 @@ export function PanelLote({
                   )}
                 </section>
               )}
+
+              <SeccionNdvi loteId={lote.id} geometria={lote.geometria ?? null} />
 
               <section className="rounded-md border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex items-center gap-2">
