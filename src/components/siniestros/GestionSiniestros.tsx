@@ -778,7 +778,6 @@ export function GestionSiniestros({
               <th className="px-2 py-2 text-right font-medium" title="Rinde estimado por el perito, en quintales por hectárea">
                 Rinde est.
               </th>
-              <th className="px-2 py-2 text-right font-medium">Daño</th>
               <th className="px-2 py-2 font-medium">Estado</th>
               <th className="px-2 py-2 font-medium">Perito</th>
               <th className="px-2 py-2 font-medium">Fotos</th>
@@ -854,7 +853,7 @@ export function GestionSiniestros({
                     {fechaCorta(c.fecha)}
                   </td>
                   <td className="mono px-2 py-1.5 text-right">
-                    {num(c.hectareas_aseguradas, 1)}
+                    {num(c.hectareas_aseguradas)}
                   </td>
                   <td className="mono px-2 py-1.5 text-right">
                     {rindeAseguradoPorHa(c) ?? "—"}
@@ -866,7 +865,6 @@ export function GestionSiniestros({
                       onGuardar={(v) => guardarRinde([c.lote_id], v)}
                     />
                   </td>
-                  <td className="mono px-2 py-1.5 text-right">{num(c.danio_estimado)}</td>
                   <td className="px-2 py-1.5">
                     {c.siniestro_id === null ? (
                       <span className="text-[var(--color-ink-faint)]">—</span>

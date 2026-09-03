@@ -16,7 +16,7 @@ export default async function ClientesPage() {
         <h1 className="mb-0.5 text-[17px] font-semibold">Clientes por cultivo</h1>
         <p className="text-[12px] text-[var(--color-ink-muted)]">
           El multirriesgo se liquida por CUIT y cultivo. La indemnización son los
-          quintales asegurados menos los estimados por el perito.
+          quintales asegurados menos los cosechados.
         </p>
       </div>
 
