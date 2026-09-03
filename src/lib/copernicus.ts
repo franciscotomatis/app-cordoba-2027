@@ -21,6 +21,16 @@ const PROCESO_URL = "https://sh.dataspace.copernicus.eu/api/v1/process";
 // Nubes: se descartan las fechas con poca superficie válida.
 const COBERTURA_MINIMA = 0.6;
 
+// Con las geometrías en EPSG:4326 la resolución que espera Copernicus va en
+// GRADOS, no en metros. 0,0001° son unos 11 m en latitud y ~9 m en longitud a
+// la altura de Córdoba, es decir la resolución nativa de Sentinel-2.
+const RESOLUCION_GRADOS = 0.0001;
+const METROS_POR_GRADO = 111320;
+const RESOLUCION_OBJETIVO_M = 10;
+// Límites de la API de procesado.
+const PIXELES_MIN = 64;
+const PIXELES_MAX = 2500;
+
 let tokenCache: { valor: string; vence: number } | null = null;
 
 export function hayCredenciales() {
@@ -115,8 +125,8 @@ export async function serieNdvi(
         // Una medición cada 5 días: es la frecuencia de paso de Sentinel-2.
         aggregationInterval: { of: "P5D" },
         evalscript: GUION_ESTADISTICA,
-        resx: 10,
-        resy: 10,
+        resx: RESOLUCION_GRADOS,
+        resy: RESOLUCION_GRADOS,
       },
       calculations: { ndvi: { statistics: { default: {} } } },
     }),
@@ -192,13 +202,45 @@ function evaluatePixel(s) {
   return [c[0], c[1], c[2], 1];
 }`;
 
+/** Extremos de la geometría, en grados. */
+function extremos(g: Geometry) {
+  const lats: number[] = [];
+  const lons: number[] = [];
+  const recorrer = (c: unknown): void => {
+    if (Array.isArray(c) && typeof c[0] === "number") {
+      lons.push(c[0] as number);
+      lats.push(c[1] as number);
+      return;
+    }
+    if (Array.isArray(c)) c.forEach(recorrer);
+  };
+  recorrer((g as { coordinates: unknown }).coordinates);
+  return {
+    minLat: Math.min(...lats),
+    maxLat: Math.max(...lats),
+    minLon: Math.min(...lons),
+    maxLon: Math.max(...lons),
+  };
+}
+
 export async function imagenNdvi(
   geometria: Geometry,
-  fecha: string,
-  ancho = 512,
-  alto = 512
+  fecha: string
 ): Promise<ArrayBuffer> {
   const token = await obtenerToken();
+
+  // El tamaño en píxeles se calcula según el tamaño real del lote para quedar
+  // cerca de los 10 m por píxel de Sentinel-2. Un tamaño fijo hace que en un
+  // lote grande la resolución pedida supere el límite de la colección.
+  const e = extremos(geometria);
+  const latMedia = ((e.minLat + e.maxLat) / 2) * (Math.PI / 180);
+  const anchoM = (e.maxLon - e.minLon) * METROS_POR_GRADO * Math.cos(latMedia);
+  const altoM = (e.maxLat - e.minLat) * METROS_POR_GRADO;
+
+  const enRango = (v: number) =>
+    Math.max(PIXELES_MIN, Math.min(PIXELES_MAX, Math.round(v)));
+  const ancho = enRango(anchoM / RESOLUCION_OBJETIVO_M);
+  const alto = enRango(altoM / RESOLUCION_OBJETIVO_M);
 
   // Ventana de 5 días alrededor de la fecha: es el ciclo de paso del satélite.
   const centro = new Date(`${fecha}T00:00:00Z`);
