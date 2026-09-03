@@ -163,12 +163,17 @@ export async function serieNdvi(
     }[];
   };
 
-  const puntos: PuntoNdvi[] = [];
   const motivos = new Set<string>();
   let conError = 0;
-  let descartadosPorNubes = 0;
   let sinDatos = 0;
-  const coberturas: number[] = [];
+
+  // Primero se juntan todas las fechas con su cantidad de píxeles válidos.
+  //
+  // Ojo: los píxeles válidos no se comparan contra el total del rectángulo,
+  // porque un lote de forma irregular ocupa solo una parte de su rectángulo y
+  // ese descuento es geométrico, no nubosidad. La referencia es la fecha más
+  // despejada del período: sobre esa se mide cuánto tapan las nubes al resto.
+  const medidas: { fecha: string; ndvi: number; validos: number }[] = [];
 
   for (const tramo of datos.data ?? []) {
     if (tramo.error) {
@@ -183,22 +188,30 @@ export async function serieNdvi(
       continue;
     }
 
-    const total = stats.sampleCount ?? 0;
-    const sinDato = stats.noDataCount ?? 0;
-    const cobertura = total > 0 ? (total - sinDato) / total : 0;
-    if (coberturas.length < 6) {
-      coberturas.push(Math.round(cobertura * 100) / 100);
-    }
+    medidas.push({
+      fecha: tramo.interval.from.slice(0, 10),
+      ndvi: Math.round(stats.mean * 1000) / 1000,
+      validos: (stats.sampleCount ?? 0) - (stats.noDataCount ?? 0),
+    });
+  }
 
-    // Con muchas nubes el promedio no representa al lote.
+  const maximoValidos = Math.max(0, ...medidas.map((m) => m.validos));
+  const puntos: PuntoNdvi[] = [];
+  const coberturas: number[] = [];
+  let descartadosPorNubes = 0;
+
+  for (const m of medidas) {
+    const cobertura = maximoValidos > 0 ? m.validos / maximoValidos : 0;
+    if (coberturas.length < 6) coberturas.push(Math.round(cobertura * 100) / 100);
+
     if (cobertura < COBERTURA_MINIMA) {
       descartadosPorNubes++;
       continue;
     }
 
     puntos.push({
-      fecha: tramo.interval.from.slice(0, 10),
-      ndvi: Math.round(stats.mean * 1000) / 1000,
+      fecha: m.fecha,
+      ndvi: m.ndvi,
       cobertura: Math.round(cobertura * 100) / 100,
     });
   }
