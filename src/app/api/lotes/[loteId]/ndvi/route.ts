@@ -56,7 +56,21 @@ export async function GET(
         "Falta configurar las credenciales de Copernicus (COPERNICUS_CLIENT_ID y COPERNICUS_CLIENT_SECRET).";
     } else {
       try {
-        const puntos = await serieNdvi(lote.geometry as Geometry, desdeISO, hastaISO);
+        const { puntos, diagnostico } = await serieNdvi(
+          lote.geometry as Geometry,
+          desdeISO,
+          hastaISO
+        );
+
+        // Si no hay ninguna fecha útil conviene decir por qué.
+        if (puntos.length === 0) {
+          avisoFuente =
+            diagnostico.conError > 0
+              ? `Copernicus no pudo procesar ${diagnostico.conError} de ${diagnostico.intervalos} períodos (${diagnostico.motivos.join(", ")}).`
+              : diagnostico.descartadosPorNubes > 0
+                ? `Las ${diagnostico.descartadosPorNubes} pasadas del período tenían demasiadas nubes sobre el lote.`
+                : "Sentinel-2 no devolvió imágenes útiles para este lote en el período.";
+        }
 
         if (puntos.length > 0) {
           await supabase.from("ndvi_lote").upsert(

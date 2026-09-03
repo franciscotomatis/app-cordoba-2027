@@ -96,11 +96,23 @@ function evaluatePixel(s) {
 
 export type PuntoNdvi = { fecha: string; ndvi: number; cobertura: number };
 
+export type ResultadoNdvi = {
+  puntos: PuntoNdvi[];
+  /** Para saber por qué una serie sale vacía en vez de quedarse sin explicación. */
+  diagnostico: {
+    intervalos: number;
+    conError: number;
+    motivos: string[];
+    descartadosPorNubes: number;
+    sinDatos: number;
+  };
+};
+
 export async function serieNdvi(
   geometria: Geometry,
   desde: string,
   hasta: string
-): Promise<PuntoNdvi[]> {
+): Promise<ResultadoNdvi> {
   const token = await obtenerToken();
 
   const r = await fetch(ESTADISTICA_URL, {
@@ -140,6 +152,7 @@ export async function serieNdvi(
   const datos = (await r.json()) as {
     data?: {
       interval: { from: string };
+      error?: { type?: string; message?: string };
       outputs?: {
         ndvi?: {
           bands?: { B0?: { stats?: { mean?: number; sampleCount?: number; noDataCount?: number } } };
@@ -149,17 +162,33 @@ export async function serieNdvi(
   };
 
   const puntos: PuntoNdvi[] = [];
+  const motivos = new Set<string>();
+  let conError = 0;
+  let descartadosPorNubes = 0;
+  let sinDatos = 0;
 
   for (const tramo of datos.data ?? []) {
+    if (tramo.error) {
+      conError++;
+      motivos.add(tramo.error.type ?? tramo.error.message ?? "error sin detalle");
+      continue;
+    }
+
     const stats = tramo.outputs?.ndvi?.bands?.B0?.stats;
-    if (!stats || stats.mean === undefined || stats.mean === null) continue;
+    if (!stats || stats.mean === undefined || stats.mean === null) {
+      sinDatos++;
+      continue;
+    }
 
     const total = stats.sampleCount ?? 0;
     const sinDato = stats.noDataCount ?? 0;
     const cobertura = total > 0 ? (total - sinDato) / total : 0;
 
     // Con muchas nubes el promedio no representa al lote.
-    if (cobertura < COBERTURA_MINIMA) continue;
+    if (cobertura < COBERTURA_MINIMA) {
+      descartadosPorNubes++;
+      continue;
+    }
 
     puntos.push({
       fecha: tramo.interval.from.slice(0, 10),
@@ -168,7 +197,16 @@ export async function serieNdvi(
     });
   }
 
-  return puntos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  return {
+    puntos: puntos.sort((a, b) => a.fecha.localeCompare(b.fecha)),
+    diagnostico: {
+      intervalos: datos.data?.length ?? 0,
+      conError,
+      motivos: [...motivos],
+      descartadosPorNubes,
+      sinDatos,
+    },
+  };
 }
 
 /** Imagen NDVI del lote en una fecha, en la paleta habitual marrón a verde. */
