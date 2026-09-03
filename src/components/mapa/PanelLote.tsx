@@ -480,7 +480,7 @@ export function PanelLote({
                           type="monotone"
                           dataKey="actual"
                           name={`Campaña ${clima.anio}`}
-                          stroke="var(--color-accent)"
+                          stroke="#2979ff"
                           strokeWidth={2.5}
                           dot={{ r: 2.5 }}
                           connectNulls
@@ -492,8 +492,7 @@ export function PanelLote({
 
                 {clima && (
                   <p className="mt-1 text-[10.5px] text-[var(--color-ink-faint)]">
-                    {clima.fuente}. Misma fuente para las dos series, para que la
-                    comparación no arrastre diferencias entre productos.
+                    {clima.fuente}
                   </p>
                 )}
               </section>
