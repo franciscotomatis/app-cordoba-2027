@@ -188,27 +188,13 @@ export async function GET(
 
   // Promedio 1991-2020 por mes.
   const acumulado = new Map<number, { suma: number; n: number }>();
-  const temperatura = new Map<
-    number,
-    { min: number; med: number; max: number; n: number }
-  >();
 
   for (const f of filas) {
     if (f.anio < INICIO_NORMAL || f.anio > FIN_NORMAL) continue;
-
     const a = acumulado.get(f.mes) ?? { suma: 0, n: 0 };
     a.suma += Number(f.pp_mm);
     a.n++;
     acumulado.set(f.mes, a);
-
-    if (f.t_min !== null && f.t_med !== null && f.t_max !== null) {
-      const t = temperatura.get(f.mes) ?? { min: 0, med: 0, max: 0, n: 0 };
-      t.min += Number(f.t_min);
-      t.med += Number(f.t_med);
-      t.max += Number(f.t_max);
-      t.n++;
-      temperatura.set(f.mes, t);
-    }
   }
 
   const actualPorMes = new Map(
@@ -235,29 +221,114 @@ export async function GET(
     0
   );
 
-  const redondearT = (v: number) => Math.round(v * 10) / 10;
+  // --- Temperatura: día a día de los últimos 12 meses ---
+  // Sirve para ver heladas y picos de calor, que un promedio mensual esconde.
+  const hastaTemp = new Date();
+  hastaTemp.setDate(hastaTemp.getDate() - 6); // demora del reanálisis
+  const desdeTemp = new Date(hastaTemp);
+  desdeTemp.setFullYear(desdeTemp.getFullYear() - 1);
+  const desdeISO = desdeTemp.toISOString().slice(0, 10);
+  const hastaISO = hastaTemp.toISOString().slice(0, 10);
 
-  const serieTemperatura = MESES.map((etiqueta, i) => {
-    const t = temperatura.get(i + 1);
-    if (!t || t.n === 0) {
-      return { mes: etiqueta, min: null, med: null, max: null, rango: null };
+  let { data: dias } = await supabase
+    .from("clima_dia")
+    .select("fecha, t_min, t_med, t_max")
+    .eq("lat_celda", lat)
+    .eq("lon_celda", lon)
+    .gte("fecha", desdeISO)
+    .lte("fecha", hastaISO)
+    .order("fecha");
+
+  const conTemperatura = (dias ?? []).filter((d) => d.t_med !== null).length;
+  const esperados = Math.round(
+    (hastaTemp.getTime() - desdeTemp.getTime()) / 86400000
+  );
+
+  // Si falta buena parte del período, se pide de nuevo y se guarda.
+  if (conTemperatura < esperados * 0.9) {
+    try {
+      const url =
+        `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+        `&start_date=${desdeISO}&end_date=${hastaISO}` +
+        `&daily=precipitation_sum,temperature_2m_min,temperature_2m_mean,temperature_2m_max` +
+        `&timezone=${encodeURIComponent(ZONA)}`;
+
+      const r = await fetch(url);
+      if (r.ok) {
+        const d = (await r.json()) as {
+          daily?: {
+            time: string[];
+            precipitation_sum: (number | null)[];
+            temperature_2m_min: (number | null)[];
+            temperature_2m_mean: (number | null)[];
+            temperature_2m_max: (number | null)[];
+          };
+        };
+
+        if (d.daily) {
+          const filasDia = d.daily.time.map((fecha, i) => ({
+            lat_celda: lat,
+            lon_celda: lon,
+            fecha,
+            pp_mm: d.daily!.precipitation_sum[i] ?? 0,
+            t_min: d.daily!.temperature_2m_min[i],
+            t_med: d.daily!.temperature_2m_mean[i],
+            t_max: d.daily!.temperature_2m_max[i],
+          }));
+
+          await supabase
+            .from("clima_dia")
+            .upsert(filasDia, { onConflict: "lat_celda,lon_celda,fecha" });
+
+          dias = filasDia.map((f) => ({
+            fecha: f.fecha,
+            t_min: f.t_min,
+            t_med: f.t_med,
+            t_max: f.t_max,
+          }));
+        }
+      }
+    } catch {
+      // Si falla, se muestra lo que haya guardado.
     }
-    const min = redondearT(t.min / t.n);
-    const max = redondearT(t.max / t.n);
-    return {
-      mes: etiqueta,
-      min,
-      med: redondearT(t.med / t.n),
-      max,
+  }
+
+  const serieTemperatura = (dias ?? [])
+    .filter((d) => d.t_min !== null && d.t_max !== null)
+    .map((d) => ({
+      fecha: d.fecha as string,
+      min: Number(d.t_min),
+      med: d.t_med === null ? null : Number(d.t_med),
+      max: Number(d.t_max),
       // Recharts dibuja una banda cuando el valor es un par [desde, hasta].
-      rango: [min, max] as [number, number],
-    };
-  });
+      rango: [Number(d.t_min), Number(d.t_max)] as [number, number],
+    }));
+
+  // Umbrales agronómicos: helada meteorológica a 0 °C y golpe de calor a 35 °C.
+  const HELADA = 0;
+  const CALOR = 35;
+  const heladas = serieTemperatura.filter((d) => d.min <= HELADA);
+  const calores = serieTemperatura.filter((d) => d.max >= CALOR);
+
+  const resumenTemperatura = serieTemperatura.length
+    ? {
+        desde: serieTemperatura[0].fecha,
+        hasta: serieTemperatura[serieTemperatura.length - 1].fecha,
+        heladas: heladas.length,
+        ultimaHelada: heladas.length ? heladas[heladas.length - 1].fecha : null,
+        minima: Math.min(...serieTemperatura.map((d) => d.min)),
+        diasCalor: calores.length,
+        maxima: Math.max(...serieTemperatura.map((d) => d.max)),
+        umbralHelada: HELADA,
+        umbralCalor: CALOR,
+      }
+    : null;
 
   return NextResponse.json({
     anio: anioActual,
     serie,
     temperatura: serieTemperatura,
+    resumenTemperatura,
     totalHistorico: Math.round(totalHistorico),
     totalActual: Math.round(totalActual),
     historicoALaFecha: Math.round(historicoALaFecha),

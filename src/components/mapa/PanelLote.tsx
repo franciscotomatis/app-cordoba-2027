@@ -5,6 +5,7 @@ import {
   Area,
   CartesianGrid,
   ComposedChart,
+  ReferenceLine,
   Legend,
   Line,
   LineChart,
@@ -51,12 +52,23 @@ type Clima = {
   anio: number;
   serie: { mes: string; historico: number | null; actual: number | null }[];
   temperatura: {
-    mes: string;
-    min: number | null;
+    fecha: string;
+    min: number;
     med: number | null;
-    max: number | null;
-    rango: [number, number] | null;
+    max: number;
+    rango: [number, number];
   }[];
+  resumenTemperatura: {
+    desde: string;
+    hasta: string;
+    heladas: number;
+    ultimaHelada: string | null;
+    minima: number;
+    diasCalor: number;
+    maxima: number;
+    umbralHelada: number;
+    umbralCalor: number;
+  } | null;
   totalHistorico: number;
   totalActual: number;
   historicoALaFecha: number;
@@ -78,6 +90,11 @@ const num = (v: number | null | undefined, dec = 0) =>
         minimumFractionDigits: dec,
         maximumFractionDigits: dec,
       });
+
+const MESES_CORTOS = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
 
 const fecha = (v: string | null) => {
   if (!v) return "—";
@@ -506,13 +523,41 @@ export function PanelLote({
                 )}
               </section>
 
-              {clima?.temperatura && (
+              {clima?.temperatura && clima.temperatura.length > 0 && (
                 <section className="rounded-md border border-[var(--color-border)] p-3">
-                  <p className="mb-2 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
-                    Temperatura media mensual
-                  </p>
+                  <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <p className="text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
+                      Temperatura diaria
+                    </p>
+                    {clima.resumenTemperatura && (
+                      <>
+                        <span className="text-[12px]">
+                          <span className="mono font-semibold text-[#2979ff]">
+                            {clima.resumenTemperatura.heladas}
+                          </span>
+                          <span className="text-[var(--color-ink-faint)]">
+                            {clima.resumenTemperatura.heladas === 1
+                              ? " día con helada · mínima "
+                              : " días con helada · mínima "}
+                          </span>
+                          <span className="mono">{clima.resumenTemperatura.minima}°</span>
+                        </span>
+                        <span className="text-[12px]">
+                          <span className="mono font-semibold text-[#c0392b]">
+                            {clima.resumenTemperatura.diasCalor}
+                          </span>
+                          <span className="text-[var(--color-ink-faint)]">
+                            {clima.resumenTemperatura.diasCalor === 1
+                              ? " día de 35° o más · máxima "
+                              : " días de 35° o más · máxima "}
+                          </span>
+                          <span className="mono">{clima.resumenTemperatura.maxima}°</span>
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-                  <div className="h-52">
+                  <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart
                         data={clima.temperatura}
@@ -521,21 +566,25 @@ export function PanelLote({
                         <defs>
                           {/* De rojo arriba (máxima) a azul abajo (mínima). */}
                           <linearGradient id="bandaTemp" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#c0392b" stopOpacity={0.42} />
-                            <stop offset="50%" stopColor="#b9a37e" stopOpacity={0.28} />
-                            <stop offset="100%" stopColor="#2979ff" stopOpacity={0.42} />
+                            <stop offset="0%" stopColor="#c0392b" stopOpacity={0.45} />
+                            <stop offset="50%" stopColor="#b9a37e" stopOpacity={0.3} />
+                            <stop offset="100%" stopColor="#2979ff" stopOpacity={0.45} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
                         <XAxis
-                          dataKey="mes"
-                          tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
+                          dataKey="fecha"
+                          tick={{ fontSize: 10, fill: "var(--color-ink-faint)" }}
                           stroke="var(--color-border-strong)"
+                          minTickGap={40}
+                          tickFormatter={(f: string) =>
+                            MESES_CORTOS[Number(String(f).split("-")[1]) - 1] ?? String(f)
+                          }
                         />
                         <YAxis
                           tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
                           stroke="var(--color-border-strong)"
-                          unit="°"
+                          unit="&deg;"
                         />
                         <Tooltip
                           contentStyle={{
@@ -545,14 +594,29 @@ export function PanelLote({
                             fontSize: 12,
                           }}
                           labelStyle={{ color: "var(--color-ink)" }}
-                          formatter={(valor, nombre) => {
-                            if (Array.isArray(valor)) {
-                              return [`${valor[0]}° a ${valor[1]}°`, "Mínima y máxima"];
-                            }
-                            return [`${valor}°`, String(nombre)];
-                          }}
+                          labelFormatter={(f) => fecha(String(f))}
+                          formatter={(valor, nombre) =>
+                            Array.isArray(valor)
+                              ? [`${valor[0]}° a ${valor[1]}°`, "Mínima y máxima"]
+                              : [`${valor}°`, String(nombre)]
+                          }
                         />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
+
+                        {/* Umbrales: helada meteorológica y golpe de calor. */}
+                        <ReferenceLine
+                          y={clima.resumenTemperatura?.umbralHelada ?? 0}
+                          stroke="#2979ff"
+                          strokeDasharray="4 3"
+                          strokeWidth={1.5}
+                        />
+                        <ReferenceLine
+                          y={clima.resumenTemperatura?.umbralCalor ?? 35}
+                          stroke="#c0392b"
+                          strokeDasharray="4 3"
+                          strokeWidth={1.5}
+                        />
+
                         <Area
                           dataKey="rango"
                           name="Mínima y máxima"
@@ -565,13 +629,28 @@ export function PanelLote({
                           dataKey="med"
                           name="Media"
                           stroke="var(--color-ink)"
-                          strokeWidth={2}
+                          strokeWidth={1.5}
                           dot={false}
                           connectNulls
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
+
+                  {clima.resumenTemperatura && (
+                    <p className="mt-1 text-[10.5px] text-[var(--color-ink-faint)]">
+                      {fecha(clima.resumenTemperatura.desde)} a{" "}
+                      {fecha(clima.resumenTemperatura.hasta)}
+                      {clima.resumenTemperatura.ultimaHelada && (
+                        <>
+                          {" "}
+                          · última helada el{" "}
+                          {fecha(clima.resumenTemperatura.ultimaHelada)}
+                        </>
+                      )}
+                      . Las líneas punteadas marcan 0° y 35°.
+                    </p>
+                  )}
                 </section>
               )}
 
