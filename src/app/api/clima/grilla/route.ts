@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Lluvia acumulada por lote entre dos fechas, para pintar el mapa.
- * Sale de la tabla diaria por celda (Open-Meteo / ERA5-Land), agregada en la
- * base con la función lluvia_por_lote.
+ * Grilla de lluvia acumulada sobre la provincia entre dos fechas.
+ * Devuelve las celdas de 0,1° con sus milímetros, para dibujar la capa.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -24,34 +23,28 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { data, error } = await supabase.rpc("lluvia_por_lote", { desde, hasta });
+  const { data, error } = await supabase.rpc("lluvia_grilla", { desde, hasta });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const celdas = (data ?? []) as { lat: number; lon: number; mm: number }[];
 
-  // La función devuelve un único objeto { loteId: mm }: así no aplica el tope
-  // de 1000 filas que PostgREST impone a las respuestas tabulares.
-  const lluvia = (data ?? {}) as Record<string, number>;
-
-  // Cobertura del período: si no hay datos cargados para esas fechas conviene
-  // decirlo, en vez de mostrar un mapa todo en cero.
-  const { data: rango } = await supabase
+  // Rango de fechas disponible, para avisar si se pide un período sin datos.
+  const { data: primera } = await supabase
     .from("clima_dia")
     .select("fecha")
     .order("fecha", { ascending: true })
     .limit(1);
-  const { data: rangoFin } = await supabase
+  const { data: ultima } = await supabase
     .from("clima_dia")
     .select("fecha")
     .order("fecha", { ascending: false })
     .limit(1);
 
   return NextResponse.json({
-    lluvia,
+    celdas,
     disponible: {
-      desde: rango?.[0]?.fecha ?? null,
-      hasta: rangoFin?.[0]?.fecha ?? null,
+      desde: primera?.[0]?.fecha ?? null,
+      hasta: ultima?.[0]?.fecha ?? null,
     },
   });
 }

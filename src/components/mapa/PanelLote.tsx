@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -48,6 +50,13 @@ export type LoteDetalle = {
 type Clima = {
   anio: number;
   serie: { mes: string; historico: number | null; actual: number | null }[];
+  temperatura: {
+    mes: string;
+    min: number | null;
+    med: number | null;
+    max: number | null;
+    rango: [number, number] | null;
+  }[];
   totalHistorico: number;
   totalActual: number;
   historicoALaFecha: number;
@@ -496,6 +505,75 @@ export function PanelLote({
                   </p>
                 )}
               </section>
+
+              {clima?.temperatura && (
+                <section className="rounded-md border border-[var(--color-border)] p-3">
+                  <p className="mb-2 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
+                    Temperatura media mensual
+                  </p>
+
+                  <div className="h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart
+                        data={clima.temperatura}
+                        margin={{ top: 5, right: 8, bottom: 0, left: -18 }}
+                      >
+                        <defs>
+                          {/* De rojo arriba (máxima) a azul abajo (mínima). */}
+                          <linearGradient id="bandaTemp" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#c0392b" stopOpacity={0.42} />
+                            <stop offset="50%" stopColor="#b9a37e" stopOpacity={0.28} />
+                            <stop offset="100%" stopColor="#2979ff" stopOpacity={0.42} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="mes"
+                          tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
+                          stroke="var(--color-border-strong)"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
+                          stroke="var(--color-border-strong)"
+                          unit="°"
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                          labelStyle={{ color: "var(--color-ink)" }}
+                          formatter={(valor, nombre) => {
+                            if (Array.isArray(valor)) {
+                              return [`${valor[0]}° a ${valor[1]}°`, "Mínima y máxima"];
+                            }
+                            return [`${valor}°`, String(nombre)];
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Area
+                          dataKey="rango"
+                          name="Mínima y máxima"
+                          stroke="none"
+                          fill="url(#bandaTemp)"
+                          connectNulls
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="med"
+                          name="Media"
+                          stroke="var(--color-ink)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              )}
 
               <section className="rounded-md border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex items-center gap-2">

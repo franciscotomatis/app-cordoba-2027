@@ -37,7 +37,8 @@ import { PanelLote, type LoteDetalle } from "./mapa/PanelLote";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
 import { FiltroMulti } from "./mapa/FiltroMulti";
-import { AZULES, crearEscalaLluvia, SIN_DATO } from "@/lib/escalaLluvia";
+import { AZULES, type EscalaLluvia } from "@/lib/escalaLluvia";
+import { CapaLluvia } from "./mapa/CapaLluvia";
 import { BuscadorTexto } from "./mapa/BuscadorTexto";
 import "leaflet/dist/leaflet.css";
 
@@ -149,11 +150,7 @@ function fila(etiqueta: string, valor: string, resaltar = false) {
   </div>`;
 }
 
-function contenidoPopup(
-  p: LoteProps,
-  editable: boolean,
-  lluvia?: { mm: number; desde: string; hasta: string }
-) {
+function contenidoPopup(p: LoteProps, editable: boolean) {
   const color = colorPorCultivo(p.cultivo);
   const ubicacion = [p.campo, p.localidad, p.departamento].filter(Boolean).join(" · ");
   const pct = p.porcentajeAsegurado != null ? ` (${num(p.porcentajeAsegurado)}%)` : "";
@@ -212,14 +209,6 @@ function contenidoPopup(
       ${p.cultivoAnterior ? fila("Cultivo anterior", escapar(p.cultivoAnterior)) : ""}
       ${fila("Zona", escapar(p.zona ?? "—"))}
       ${fila("Estado", escapar(p.estado ?? "—"))}
-      ${
-        lluvia
-          ? fila(
-              `Lluvia ${fecha(lluvia.desde)}–${fecha(lluvia.hasta)}`,
-              `${Math.round(lluvia.mm)} mm`
-            )
-          : ""
-      }
     </div>
     ${
       editable
@@ -505,16 +494,18 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const [cargando, setCargando] = useState(!lotesEnCache());
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS);
   const [gpsActivo, setGpsActivo] = useState(false);
-  const [colorPor, setColorPor] = useState<"cultivo" | "siniestro" | "lluvia">(
-    "cultivo"
-  );
+  const [colorPor, setColorPor] = useState<"cultivo" | "siniestro">("cultivo");
+
+  // Capa de lluvia: se prende desde el panel de capas y tiene su propio panel
+  // con el período y la escala.
+  const [capaLluvia, setCapaLluvia] = useState(false);
   const [rangoLluvia, setRangoLluvia] = useState<RangoFecha>(RANGO_VACIO);
-  const [lluvia, setLluvia] = useState<Record<string, number>>({});
-  const [lluviaDisponible, setLluviaDisponible] = useState<{
-    desde: string | null;
-    hasta: string | null;
-  } | null>(null);
-  const [cargandoLluvia, setCargandoLluvia] = useState(false);
+  const [estadoLluvia, setEstadoLluvia] = useState<{
+    cargando: boolean;
+    escala: EscalaLluvia | null;
+    disponible: { desde: string | null; hasta: string | null } | null;
+    celdas: number;
+  }>({ cargando: false, escala: null, disponible: null, celdas: 0 });
   const [modoSeleccion, setModoSeleccion] = useState(false);
   const [modoLazo, setModoLazo] = useState(false);
   const [rindeTanda, setRindeTanda] = useState("");
@@ -531,11 +522,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
   const modoSeleccionRef = useRef(modoSeleccion);
   const alternarRef = useRef<(id: string) => void>(() => {});
   const puedeCargarRindeRef = useRef(false);
-  const lluviaRef = useRef<{
-    valores: Record<string, number>;
-    rango: RangoFecha;
-    activo: boolean;
-  }>({ valores: {}, rango: RANGO_VACIO, activo: false });
 
   // Los textos se difieren: escribir no bloquea el repintado del mapa.
   const textoDif = useDeferredValue(filtros.texto);
@@ -550,13 +536,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
   useEffect(() => {
     puedeCargarRindeRef.current = puedeCargarRinde;
   }, [puedeCargarRinde]);
-  useEffect(() => {
-    lluviaRef.current = {
-      valores: lluvia,
-      rango: rangoLluvia,
-      activo: colorPor === "lluvia",
-    };
-  }, [lluvia, rangoLluvia, colorPor]);
 
   useEffect(() => {
     if (datos) return;
@@ -565,25 +544,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
       .catch((e: Error) => setError(e.message))
       .finally(() => setCargando(false));
   }, [datos]);
-
-  // La lluvia se pide solo cuando se pinta por lluvia y hay un rango elegido.
-  useEffect(() => {
-    if (colorPor !== "lluvia" || !rangoLluvia.desde || !rangoLluvia.hasta) return;
-
-    setCargandoLluvia(true);
-    fetch(`/api/clima/mapa?desde=${rangoLluvia.desde}&hasta=${rangoLluvia.hasta}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) {
-          setAvisoRinde(d.error);
-          return;
-        }
-        setLluvia(d.lluvia ?? {});
-        setLluviaDisponible(d.disponible ?? null);
-      })
-      .catch(() => setAvisoRinde("No se pudo cargar la lluvia."))
-      .finally(() => setCargandoLluvia(false));
-  }, [colorPor, rangoLluvia]);
 
   const props = useMemo(
     () => (datos?.features ?? []).map((f) => f.properties as LoteProps),
@@ -746,14 +706,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
     seleccion,
   ]);
 
-  const escalaLluvia = useMemo(() => {
-    if (colorPor !== "lluvia") return null;
-    const valores = [...recorte.visibles]
-      .map((id) => lluvia[id])
-      .filter((v): v is number => typeof v === "number");
-    return crearEscalaLluvia(valores);
-  }, [colorPor, lluvia, recorte.visibles]);
-
   const alternarSeleccion = useCallback(
     (id: string) => {
       const actual = seleccionRef.current;
@@ -786,18 +738,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
           interactive: true,
         };
       }
-      if (colorPor === "lluvia") {
-        const mm = lluvia[p.id];
-        return {
-          color: "#ffffff",
-          fillColor: escalaLluvia ? escalaLluvia.color(mm) : SIN_DATO,
-          weight: 1,
-          fillOpacity: 0.92,
-          opacity: 0.65,
-          interactive: true,
-        };
-      }
-
       if (colorPor === "siniestro") {
         const causa = p.siniestros?.[0]?.causa;
         if (!causa) {
@@ -831,7 +771,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
         interactive: true,
       };
     });
-  }, [recorte.visibles, seleccion, colorPor, lluvia, escalaLluvia]);
+  }, [recorte.visibles, seleccion, colorPor]);
 
   useEffect(() => {
     aplicarEstilos();
@@ -845,16 +785,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
         alternarRef.current(p.id);
         return;
       }
-      const ll = lluviaRef.current;
-      const datoLluvia =
-        ll.activo && ll.rango.desde && ll.rango.hasta && ll.valores[p.id] !== undefined
-          ? { mm: ll.valores[p.id], desde: ll.rango.desde, hasta: ll.rango.hasta }
-          : undefined;
-
       layer
-        .bindPopup(contenidoPopup(p, puedeCargarRindeRef.current, datoLluvia), {
-          maxWidth: 320,
-        })
+        .bindPopup(contenidoPopup(p, puedeCargarRindeRef.current), { maxWidth: 320 })
         .openPopup(e.latlng);
     });
   }, []);
@@ -1094,7 +1026,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
           />
 
           <div className="flex items-center gap-0.5 rounded-md border border-[var(--color-border)] p-0.5">
-            {(["cultivo", "siniestro", "lluvia"] as const).map((modo) => (
+            {(["cultivo", "siniestro"] as const).map((modo) => (
               <button
                 key={modo}
                 onClick={() => setColorPor(modo)}
@@ -1106,28 +1038,13 @@ export default function MapaLotes({ rol }: { rol: string }) {
                 title={
                   modo === "cultivo"
                     ? "Pintar los lotes según el cultivo"
-                    : modo === "siniestro"
-                      ? "Pintar los lotes según la causa del siniestro"
-                      : "Pintar los lotes según la lluvia acumulada del período"
+                    : "Pintar los lotes según la causa del siniestro"
                 }
               >
-                {modo === "cultivo"
-                  ? "Color: cultivo"
-                  : modo === "siniestro"
-                    ? "Color: siniestro"
-                    : "Color: lluvia"}
+                {modo === "cultivo" ? "Color: cultivo" : "Color: siniestro"}
               </button>
             ))}
           </div>
-
-          {colorPor === "lluvia" && (
-            <FiltroFecha
-              titulo="Lluvia"
-              rango={rangoLluvia}
-              onChange={setRangoLluvia}
-              ancho="w-48"
-            />
-          )}
 
           <button
             onClick={() => setFiltros((f) => ({ ...f, soloSiniestros: !f.soloSiniestros }))}
@@ -1328,63 +1245,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
         <div className="absolute right-3 bottom-8 z-[1000] max-h-64 w-auto min-w-36 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-2.5 py-2 shadow-sm backdrop-blur">
           <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
-            {colorPor === "cultivo"
-              ? "Hectáreas por cultivo"
-              : colorPor === "siniestro"
-                ? "Hectáreas por causa"
-                : "Lluvia acumulada"}
+            {colorPor === "cultivo" ? "Hectáreas por cultivo" : "Hectáreas por causa"}
           </p>
-          {colorPor === "lluvia" && (
-            <div className="text-[11px]">
-              {!rangoLluvia.desde || !rangoLluvia.hasta ? (
-                <p className="text-[var(--color-ink-muted)]">
-                  Elegí un período en el filtro «Lluvia».
-                </p>
-              ) : cargandoLluvia ? (
-                <p className="text-[var(--color-ink-muted)]">Cargando lluvia...</p>
-              ) : !escalaLluvia || escalaLluvia.maximo === 0 ? (
-                <p className="text-[var(--color-ink-muted)]">
-                  Sin datos para ese período.
-                  {lluviaDisponible?.desde && (
-                    <>
-                      {" "}
-                      Hay desde el{" "}
-                      <span className="mono">
-                        {lluviaDisponible.desde.split("-").reverse().join("/")}
-                      </span>{" "}
-                      al{" "}
-                      <span className="mono">
-                        {lluviaDisponible.hasta?.split("-").reverse().join("/")}
-                      </span>
-                      .
-                    </>
-                  )}
-                </p>
-              ) : (
-                <ul className="space-y-0.5">
-                  {AZULES.map((color, i) => {
-                    const desde = i === 0 ? escalaLluvia.minimo : escalaLluvia.cortes[i - 1];
-                    const hasta = escalaLluvia.cortes[i];
-                    return (
-                      <li key={color} className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                          style={{ background: color }}
-                        />
-                        <span className="mono text-[var(--color-ink-muted)]">
-                          {hasta === undefined
-                            ? `${desde}+ mm`
-                            : `${desde}–${hasta} mm`}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          )}
-
-          <ul className={`space-y-0.5 ${colorPor === "lluvia" ? "hidden" : ""}`}>
+          <ul className="space-y-0.5">
             {[...(colorPor === "cultivo" ? recorte.porCultivo : recorte.porCausa).entries()]
               .sort((a, b) => b[1] - a[1])
               .map(([clave, ha]) => (
@@ -1411,6 +1274,69 @@ export default function MapaLotes({ rol }: { rol: string }) {
             )}
           </ul>
         </div>
+
+        {/* Panel de la capa de lluvia: aparece al prenderla desde el panel de capas */}
+        {capaLluvia && (
+          <div className="absolute top-3 right-16 z-[1000] w-56 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-2.5 shadow-sm backdrop-blur">
+            <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
+              Lluvia acumulada
+            </p>
+
+            <FiltroFecha
+              titulo="Período"
+              rango={rangoLluvia}
+              onChange={setRangoLluvia}
+              ancho="w-full"
+            />
+
+            <div className="mt-2 text-[11px]">
+              {!rangoLluvia.desde || !rangoLluvia.hasta ? (
+                <p className="text-[var(--color-ink-muted)]">
+                  Elegí un período para ver la lluvia.
+                </p>
+              ) : estadoLluvia.cargando ? (
+                <p className="text-[var(--color-ink-muted)]">Cargando...</p>
+              ) : !estadoLluvia.escala || estadoLluvia.celdas === 0 ? (
+                <p className="text-[var(--color-ink-muted)]">
+                  Sin datos para ese período.
+                  {estadoLluvia.disponible?.desde && (
+                    <>
+                      {" "}
+                      Hay del{" "}
+                      <span className="mono">
+                        {estadoLluvia.disponible.desde.split("-").reverse().join("/")}
+                      </span>{" "}
+                      al{" "}
+                      <span className="mono">
+                        {estadoLluvia.disponible.hasta?.split("-").reverse().join("/")}
+                      </span>
+                      .
+                    </>
+                  )}
+                </p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {AZULES.map((color, i) => {
+                    const escala = estadoLluvia.escala!;
+                    const desde = i === 0 ? escala.minimo : escala.cortes[i - 1];
+                    const hasta = escala.cortes[i];
+                    return (
+                      <li key={color} className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                          style={{ background: color }}
+                        />
+                        <span className="mono text-[var(--color-ink-muted)]">
+                          {hasta === undefined ? `${desde}+ mm` : `${desde}–${hasta} mm`}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => setGpsActivo((v) => !v)}
@@ -1451,6 +1377,17 @@ export default function MapaLotes({ rol }: { rol: string }) {
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
+            <LayersControl.Overlay name="Lluvia acumulada">
+              <LayerGroup
+                eventHandlers={{
+                  add: () => setCapaLluvia(true),
+                  remove: () => setCapaLluvia(false),
+                }}
+              >
+                <CapaLluvia rango={rangoLluvia} onEstado={setEstadoLluvia} />
+              </LayerGroup>
+            </LayersControl.Overlay>
+
             <LayersControl.Overlay name="Límite de Córdoba">
               <LayerGroup>
                 <CapaLimites tipo="provincia" />
