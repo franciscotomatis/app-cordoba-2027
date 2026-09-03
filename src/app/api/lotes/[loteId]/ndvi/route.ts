@@ -68,7 +68,7 @@ export async function GET(
             diagnostico.conError > 0
               ? `Copernicus no pudo procesar ${diagnostico.conError} de ${diagnostico.intervalos} períodos (${diagnostico.motivos.join(", ")}).`
               : diagnostico.descartadosPorNubes > 0
-                ? `Las ${diagnostico.descartadosPorNubes} pasadas del período tenían demasiadas nubes sobre el lote.`
+                ? `Las ${diagnostico.descartadosPorNubes} pasadas del período tenían demasiadas nubes sobre el lote (cobertura observada: ${diagnostico.coberturas.join(", ")}).`
                 : "Sentinel-2 no devolvió imágenes útiles para este lote en el período.";
         }
 

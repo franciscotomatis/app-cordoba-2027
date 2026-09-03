@@ -105,6 +105,8 @@ export type ResultadoNdvi = {
     motivos: string[];
     descartadosPorNubes: number;
     sinDatos: number;
+    /** Muestra de coberturas, para entender si el filtro de nubes es el problema. */
+    coberturas: number[];
   };
 };
 
@@ -166,6 +168,7 @@ export async function serieNdvi(
   let conError = 0;
   let descartadosPorNubes = 0;
   let sinDatos = 0;
+  const coberturas: number[] = [];
 
   for (const tramo of datos.data ?? []) {
     if (tramo.error) {
@@ -183,6 +186,9 @@ export async function serieNdvi(
     const total = stats.sampleCount ?? 0;
     const sinDato = stats.noDataCount ?? 0;
     const cobertura = total > 0 ? (total - sinDato) / total : 0;
+    if (coberturas.length < 6) {
+      coberturas.push(Math.round(cobertura * 100) / 100);
+    }
 
     // Con muchas nubes el promedio no representa al lote.
     if (cobertura < COBERTURA_MINIMA) {
@@ -205,6 +211,7 @@ export async function serieNdvi(
       motivos: [...motivos],
       descartadosPorNubes,
       sinDatos,
+      coberturas,
     },
   };
 }
