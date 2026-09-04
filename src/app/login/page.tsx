@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Marca } from "@/components/Marca";
 import { invalidarLotes } from "@/lib/datosMapa";
 
 export default function LoginPage() {
@@ -39,16 +40,8 @@ export default function LoginPage() {
         onSubmit={handleSubmit}
         className="w-full max-w-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-7"
       >
-        <div className="mb-6 flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-accent)] text-[13px] font-semibold text-white">
-            C
-          </div>
-          <div className="leading-tight">
-            <p className="text-[13px] font-semibold">Programa Córdoba</p>
-            <p className="mono text-[10px] text-[var(--color-ink-faint)]">
-              Campaña 25/26
-            </p>
-          </div>
+        <div className="mb-6">
+          <Marca tamanio="grande" />
         </div>
 
         <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">

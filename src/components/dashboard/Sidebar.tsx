@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Marca } from "@/components/Marca";
 import {
   LayoutDashboard,
   Map,
@@ -29,14 +30,8 @@ export function Sidebar({ items }: { items: ItemMenu[] }) {
 
   return (
     <nav className="flex w-52 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="flex items-center gap-2 px-4 py-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-accent)] text-[13px] font-semibold text-white">
-          C
-        </div>
-        <div className="leading-tight">
-          <p className="text-[13px] font-semibold">Programa Córdoba</p>
-          <p className="mono text-[10px] text-[var(--color-ink-faint)]">25/26</p>
-        </div>
+      <div className="px-4 py-4">
+        <Marca />
       </div>
 
       <ul className="flex flex-1 flex-col gap-0.5 px-2 py-2">

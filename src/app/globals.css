@@ -22,6 +22,9 @@
   --color-positive: #4f7c4a;
   --color-warning: #c98a2e;
   --color-danger: #c0503f;
+
+  /* Magenta institucional de Sancor Seguros */
+  --color-marca: #e5007d;
 }
 
 /* Oscuro por preferencia del sistema, salvo que el usuario haya elegido claro. */
@@ -44,6 +47,8 @@
     --color-positive: #7ba86f;
     --color-warning: #d9a05b;
     --color-danger: #d97362;
+
+    --color-marca: #ff3fa4;
   }
 }
 
@@ -66,6 +71,8 @@
   --color-positive: #7ba86f;
   --color-warning: #d9a05b;
   --color-danger: #d97362;
+
+  --color-marca: #ff3fa4;
 }
 
 @theme inline {
@@ -83,6 +90,7 @@
   --color-positive: var(--color-positive);
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
+  --color-marca: var(--color-marca);
 
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);

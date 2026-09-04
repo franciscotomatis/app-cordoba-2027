@@ -13,7 +13,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Programa Córdoba",
+  title: "Multirriesgo Córdoba",
   description: "Gestión de lotes agrícolas asegurados",
 };
 
