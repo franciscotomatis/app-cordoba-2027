@@ -23,6 +23,15 @@ export async function GET(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!fotos?.length) return NextResponse.json({ fotos: [] });
 
+  // Quién puede borrar: el admin cualquiera, el perito solo las suyas.
+  const { data: perfil } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const esAdmin = perfil?.role === "admin";
+  const esPerito = perfil?.role === "perito";
+
   const { data: firmadas } = await supabase.storage
     .from("fotos")
     .createSignedUrls(
@@ -46,6 +55,7 @@ export async function GET(
       nombre_original: f.nombre_original,
       created_at: f.created_at,
       subido_por_nombre: f.subido_por ? (nombrePorId.get(f.subido_por) ?? null) : null,
+      puede_borrar: esAdmin || (esPerito && f.subido_por === user.id),
     })),
   });
 }

@@ -1,8 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
 import { FotoUpload } from "@/components/dashboard/FotoUpload";
+import { GaleriaFotos } from "@/components/fotos/GaleriaFotos";
 
 export default async function FotosPage() {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: perfil } = user
+    ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+    : { data: null };
+
+  const esAdmin = perfil?.role === "admin";
+  const esPerito = perfil?.role === "perito";
 
   const { data: fotos } = await supabase
     .from("fotos")
@@ -42,36 +54,16 @@ export default async function FotosPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {fotos.map((f) => {
-            const url = urlPorPath.get(f.storage_path);
-            return (
-              <figure
-                key={f.id}
-                className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]"
-              >
-                {url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={url}
-                    alt={f.nombre_original ?? "Foto de campo"}
-                    className="aspect-4/3 w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex aspect-4/3 items-center justify-center bg-[var(--color-surface-muted)] text-[11px] text-[var(--color-ink-faint)]">
-                    Sin vista previa
-                  </div>
-                )}
-                <figcaption className="px-2.5 py-2">
-                  <p className="truncate text-[11px]">{f.nombre_original ?? "—"}</p>
-                  <p className="mono text-[10px] text-[var(--color-ink-faint)]">
-                    {new Date(f.created_at).toLocaleString("es-AR")}
-                  </p>
-                </figcaption>
-              </figure>
-            );
-          })}
-        </div>
+        <GaleriaFotos
+          fotos={fotos.map((f) => ({
+            id: f.id,
+            url: urlPorPath.get(f.storage_path) ?? null,
+            nombre_original: f.nombre_original,
+            created_at: f.created_at,
+            // El admin borra cualquiera; el perito, solo las que subió él.
+            puede_borrar: esAdmin || (esPerito && f.subido_por === user?.id),
+          }))}
+        />
       )}
     </div>
   );

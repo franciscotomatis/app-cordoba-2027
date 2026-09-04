@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 
+// La conexión vive en .env.local (fuera del repo), así no hay que pasarla a mano.
+process.loadEnvFile?.(".env.local");
+
 const file = process.argv[2];
 if (!file) {
   console.error("Uso: node scripts/run-migration.mjs <archivo.sql>");

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
+import { BotonBorrarFoto } from "@/components/fotos/BotonBorrarFoto";
 
 type Foto = {
   id: string;
@@ -9,6 +10,7 @@ type Foto = {
   nombre_original: string | null;
   created_at: string;
   subido_por_nombre: string | null;
+  puede_borrar: boolean;
 };
 
 export function GaleriaLote({
@@ -99,14 +101,25 @@ export function GaleriaLote({
                       Sin vista previa
                     </div>
                   )}
-                  <figcaption className="px-2 py-1.5">
-                    <p className="mono text-[10px] text-[var(--color-ink-faint)]">
-                      {new Date(f.created_at).toLocaleString("es-AR")}
-                    </p>
-                    {f.subido_por_nombre && (
-                      <p className="truncate text-[10.5px] text-[var(--color-ink-muted)]">
-                        {f.subido_por_nombre}
+                  <figcaption className="flex items-start gap-1 px-2 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="mono text-[10px] text-[var(--color-ink-faint)]">
+                        {new Date(f.created_at).toLocaleString("es-AR")}
                       </p>
+                      {f.subido_por_nombre && (
+                        <p className="truncate text-[10.5px] text-[var(--color-ink-muted)]">
+                          {f.subido_por_nombre}
+                        </p>
+                      )}
+                    </div>
+                    {f.puede_borrar && (
+                      <BotonBorrarFoto
+                        fotoId={f.id}
+                        onBorrada={(msg) => {
+                          setFotos((prev) => (prev ?? []).filter((x) => x.id !== f.id));
+                          if (msg) setError(msg);
+                        }}
+                      />
                     )}
                   </figcaption>
                 </figure>

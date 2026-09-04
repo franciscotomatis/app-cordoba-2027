@@ -3,20 +3,27 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchAll } from "@/lib/supabase/fetchAll";
 import {
   GestionSiniestros,
+  type Alcance,
   type CasoSiniestro,
   type PeritoOpcion,
 } from "@/components/siniestros/GestionSiniestros";
 
+const ALCANCES: Alcance[] = ["denunciados", "unidad", "todos"];
+
 export default async function SiniestrosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ todos?: string }>;
+  searchParams: Promise<{ alcance?: string }>;
 }) {
-  const { todos } = await searchParams;
-  // Por defecto solo los casos denunciados; con ?todos=1 se suman los lotes sin
-  // denuncia PERO solo los del mismo CUIT y cultivo que ya tienen un caso, que
-  // son los que entran en esa liquidación.
-  const incluirSinDenuncia = todos === "1";
+  const { alcance: pedido } = await searchParams;
+  // Tres alcances posibles:
+  //   denunciados → solo los lotes con denuncia (lo que se gestiona a diario)
+  //   unidad      → suma los lotes sin denuncia del mismo CUIT+cultivo, que
+  //                 entran en la misma liquidación
+  //   todos       → la base completa, para buscar cualquier lote del programa
+  const alcance: Alcance = ALCANCES.includes(pedido as Alcance)
+    ? (pedido as Alcance)
+    : "denunciados";
 
   const supabase = await createClient();
   const {
@@ -33,14 +40,14 @@ export default async function SiniestrosPage({
   const rol = perfil?.role ?? "lectura";
   const puedeEditar = rol === "admin" || rol === "perito";
 
-  // Solo las filas de unidades CUIT+cultivo con al menos un caso: son las
-  // únicas que se muestran, así que no tiene sentido traer el programa entero.
+  // En los dos primeros alcances alcanza con las unidades que tienen algún
+  // caso; traer el programa entero solo tiene sentido en "todos".
   const { data: filas, error } = await fetchAll<CasoSiniestro>(
     supabase,
     "gestion_lotes",
     "*",
     undefined,
-    { unidad_con_denuncia: true }
+    alcance === "todos" ? undefined : { unidad_con_denuncia: true }
   );
 
   // Primero los casos denunciados (más recientes arriba) y después los lotes
@@ -49,12 +56,16 @@ export default async function SiniestrosPage({
     if ((a.siniestro_id === null) !== (b.siniestro_id === null)) {
       return a.siniestro_id === null ? 1 : -1;
     }
-    return (b.fecha ?? "").localeCompare(a.fecha ?? "");
+    if (a.siniestro_id !== null) return (b.fecha ?? "").localeCompare(a.fecha ?? "");
+    // Entre los que no tienen denuncia, ordenar por asegurado es más útil que
+    // por una fecha que no existe.
+    return (a.cliente_nombre ?? "").localeCompare(b.cliente_nombre ?? "");
   });
 
-  const casos = incluirSinDenuncia
-    ? ordenadas
-    : ordenadas.filter((f) => f.siniestro_id !== null);
+  const casos =
+    alcance === "denunciados"
+      ? ordenadas.filter((f) => f.siniestro_id !== null)
+      : ordenadas;
 
   const { data: peritos } = await supabase
     .from("profiles")
@@ -79,8 +90,7 @@ export default async function SiniestrosPage({
           peritos={(peritos ?? []) as PeritoOpcion[]}
           puedeEditar={puedeEditar}
           rol={rol}
-          incluirSinDenuncia={incluirSinDenuncia}
-          totalSinDenuncia={ordenadas.filter((f) => f.siniestro_id === null).length}
+          alcance={alcance}
         />
       )}
     </div>

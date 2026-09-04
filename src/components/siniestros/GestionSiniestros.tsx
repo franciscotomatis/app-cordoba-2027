@@ -65,6 +65,9 @@ export type CasoSiniestro = {
   unidad_con_denuncia: boolean;
 };
 
+/** Qué universo de filas se muestra en la tabla. */
+export type Alcance = "denunciados" | "unidad" | "todos";
+
 export type PeritoOpcion = {
   id: string;
   nombre_completo: string | null;
@@ -174,22 +177,46 @@ const COLUMNAS_EXPORT: Columna<CasoSiniestro>[] = [
   { clave: "lon", titulo: "Longitud", ancho: 12 },
 ];
 
+/** Filas que se dibujan por tanda. */
+const TANDA = 400;
+
+const OPCIONES_ALCANCE: { valor: Alcance; etiqueta: string; ayuda: string }[] = [
+  {
+    valor: "denunciados",
+    etiqueta: "Denunciados",
+    ayuda: "Solo los lotes con denuncia cargada",
+  },
+  {
+    valor: "unidad",
+    etiqueta: "+ mismo CUIT y cultivo",
+    ayuda:
+      "El multirriesgo se liquida por CUIT y cultivo: suma los demás lotes de esa misma combinación, que también necesitan rinde estimado",
+  },
+  {
+    valor: "todos",
+    etiqueta: "Todos los lotes",
+    ayuda: "Toda la base asegurada, incluidos los CUIT y cultivos sin ninguna denuncia",
+  },
+];
+
 export function GestionSiniestros({
   casos,
   peritos,
   puedeEditar,
   rol,
-  incluirSinDenuncia,
-  totalSinDenuncia,
+  alcance,
 }: {
   casos: CasoSiniestro[];
   peritos: PeritoOpcion[];
   puedeEditar: boolean;
   rol: string;
-  incluirSinDenuncia: boolean;
-  totalSinDenuncia: number;
+  alcance: Alcance;
 }) {
   const router = useRouter();
+
+  // Con los lotes sin denuncia a la vista, la selección del mapa se expande a
+  // toda la unidad CUIT+cultivo.
+  const incluirSinDenuncia = alcance !== "denunciados";
 
   const [texto, setTexto] = useState("");
   const [cuit, setCuit] = useState("");
@@ -208,6 +235,10 @@ export function GestionSiniestros({
   const [rindeTanda, setRindeTanda] = useState("");
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [loteFotos, setLoteFotos] = useState<CasoSiniestro | null>(null);
+  // Con la base completa son miles de filas: se dibuja de a tandas para que la
+  // tabla siga siendo ágil. Los filtros, la selección y las exportaciones
+  // trabajan igual sobre todas las filas que dan.
+  const [tope, setTope] = useState(TANDA);
 
   const textoDif = useDeferredValue(texto);
   const cuitDif = useDeferredValue(cuit);
@@ -328,6 +359,10 @@ export function GestionSiniestros({
     incluirSinDenuncia,
     unidadesDeLaSeleccion,
   ]);
+
+  useEffect(() => setTope(TANDA), [filtrados]);
+
+  const visibles = useMemo(() => filtrados.slice(0, tope), [filtrados, tope]);
 
   const totales = useMemo(
     () => ({
@@ -559,22 +594,24 @@ export function GestionSiniestros({
           ancho="w-32"
         />
 
-        <Link
-          href={
-            incluirSinDenuncia
-              ? `/siniestros${soloSeleccionMapa ? "?seleccion=1" : ""}`
-              : `/siniestros?todos=1${soloSeleccionMapa ? "&seleccion=1" : ""}`
-          }
-          className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors ${
-            incluirSinDenuncia
-              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-              : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)]"
-          }`}
-          title="El multirriesgo se liquida por CUIT y cultivo: suma los demás lotes de esa misma combinación, que también necesitan rinde estimado"
-        >
-          <Layers className="h-3.5 w-3.5" />
-          {incluirSinDenuncia ? "Ocultar lotes sin denuncia" : "Incluir lotes sin denuncia"}
-        </Link>
+        {/* Alcance: de lo que hay que gestionar hoy a la base completa. */}
+        <div className="flex items-center overflow-hidden rounded-md border border-[var(--color-border)]">
+          <Layers className="mx-1.5 h-3.5 w-3.5 text-[var(--color-ink-faint)]" />
+          {OPCIONES_ALCANCE.map((o) => (
+            <Link
+              key={o.valor}
+              href={`/siniestros?alcance=${o.valor}${soloSeleccionMapa ? "&seleccion=1" : ""}`}
+              title={o.ayuda}
+              className={`border-l border-[var(--color-border)] px-2.5 py-1.5 text-[12px] transition-colors ${
+                alcance === o.valor
+                  ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                  : "text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-ink)]"
+              }`}
+            >
+              {o.etiqueta}
+            </Link>
+          ))}
+        </div>
 
         {seleccionMapa.length > 0 && (
           <button
@@ -593,7 +630,9 @@ export function GestionSiniestros({
 
         <div className="mono ml-auto flex items-baseline gap-1.5 text-[12px]">
           <span className="text-[13px] font-semibold">{filtrados.length}</span>
-          <span className="font-sans text-[var(--color-ink-faint)]">casos</span>
+          <span className="font-sans text-[var(--color-ink-faint)]">
+            {alcance === "denunciados" ? "casos" : "lotes"}
+          </span>
           <span className="ml-2 text-[13px] font-semibold">
             {Math.round(totales.hectareas).toLocaleString("es-AR")}
           </span>
@@ -785,7 +824,7 @@ export function GestionSiniestros({
             </tr>
           </thead>
           <tbody>
-            {filtrados.map((c) => {
+            {visibles.map((c) => {
               const elegido = elegidos.has(c.lote_id);
               return (
                 <tr
@@ -929,6 +968,33 @@ export function GestionSiniestros({
             })}
           </tbody>
         </table>
+
+        {filtrados.length > visibles.length && (
+          <div className="flex flex-col items-center gap-1.5 border-t border-[var(--color-border)] p-4">
+            <p className="mono text-[11.5px] text-[var(--color-ink-faint)]">
+              mostrando {visibles.length.toLocaleString("es-AR")} de{" "}
+              {filtrados.length.toLocaleString("es-AR")}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTope((t) => t + TANDA)}
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[12px] text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
+              >
+                Mostrar {TANDA} más
+              </button>
+              <button
+                onClick={() => setTope(filtrados.length)}
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[12px] text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
+              >
+                Mostrar todas
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--color-ink-faint)]">
+              Los filtros, la selección y las exportaciones ya toman las{" "}
+              {filtrados.length.toLocaleString("es-AR")} filas.
+            </p>
+          </div>
+        )}
 
         {casos.length === 0 && (
           <div className="p-10 text-center">
