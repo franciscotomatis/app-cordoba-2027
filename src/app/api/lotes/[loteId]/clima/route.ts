@@ -14,7 +14,11 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 const INICIO_NORMAL = 1991;
-const FIN_NORMAL = 2020;
+// El histórico llega hasta el último año COMPLETO: la media se corre sola cada
+// enero en vez de quedar clavada en un período fijo. La normal oficial de la
+// OMM es 1991-2020; acá se usa una serie más larga porque para comparar una
+// campaña lo que sirve es el clima reciente, no el de hace treinta años.
+const FIN_NORMAL = new Date().getFullYear() - 1;
 const ZONA = "America/Argentina/Cordoba";
 
 const aCelda = (v: number) => Math.round(v * 10) / 10;
@@ -26,6 +30,7 @@ type FilaClima = {
   t_min: number | null;
   t_med: number | null;
   t_max: number | null;
+  actualizado_en?: string | null;
 };
 
 async function bajarDeOpenMeteo(lat: number, lon: number, desde: string, hasta: string) {
@@ -115,31 +120,50 @@ export async function GET(
 
   const { data: guardado } = await supabase
     .from("clima_celda")
-    .select("anio, mes, pp_mm, t_min, t_med, t_max")
+    .select("anio, mes, pp_mm, t_min, t_med, t_max, actualizado_en")
     .eq("lat_celda", lat)
     .eq("lon_celda", lon);
 
   let filas = (guardado ?? []) as FilaClima[];
 
-  const tieneNormales = filas.some(
-    (f) => f.anio >= INICIO_NORMAL && f.anio <= FIN_NORMAL
-  );
-  const mesesActuales = filas.filter((f) => f.anio === anioActual).length;
-  const mesEsperado = new Date().getMonth() + 1;
-  // Se rearma el año en curso si falta algún mes ya transcurrido.
-  const faltaActual = mesesActuales < mesEsperado - 1;
+  // Años del histórico que no están completos (12 meses). Sirve tanto para la
+  // primera carga como para sumar el año que se cerró en diciembre.
+  const mesesPorAnio = new Map<number, number>();
+  // Un año guardado mientras todavía transcurría tiene el último mes a medias,
+  // así que no sirve para el promedio: se vuelve a pedir entero.
+  const aEstrenar = new Set<number>();
+  for (const f of filas) {
+    if (f.anio < INICIO_NORMAL || f.anio > FIN_NORMAL) continue;
+    mesesPorAnio.set(f.anio, (mesesPorAnio.get(f.anio) ?? 0) + 1);
+    const guardadoEn = f.actualizado_en ? new Date(f.actualizado_en).getFullYear() : 0;
+    if (guardadoEn <= f.anio) aEstrenar.add(f.anio);
+  }
+  const aniosFaltantes: number[] = [];
+  for (let a = INICIO_NORMAL; a <= FIN_NORMAL; a++) {
+    if ((mesesPorAnio.get(a) ?? 0) < 12 || aEstrenar.has(a)) aniosFaltantes.push(a);
+  }
 
-  if (!tieneNormales || faltaActual) {
+  const mesActual = new Date().getMonth() + 1;
+  const filaMesActual = filas.find((f) => f.anio === anioActual && f.mes === mesActual);
+  // El mes en curso se rehace una vez por día: si no, el valor queda congelado
+  // en los milímetros que llevaba el día que se miró por primera vez.
+  const mesEnCursoVencido =
+    !filaMesActual ||
+    Date.now() - new Date(filaMesActual.actualizado_en ?? 0).getTime() > 86_400_000;
+  const faltaActual =
+    filas.filter((f) => f.anio === anioActual).length < mesActual || mesEnCursoVencido;
+
+  if (aniosFaltantes.length > 0 || faltaActual) {
     const nuevas: FilaClima[] = [];
 
     try {
-      if (!tieneNormales) {
+      if (aniosFaltantes.length > 0) {
         nuevas.push(
           ...(await bajarDeOpenMeteo(
             lat,
             lon,
-            `${INICIO_NORMAL}-01-01`,
-            `${FIN_NORMAL}-12-31`
+            `${aniosFaltantes[0]}-01-01`,
+            `${aniosFaltantes[aniosFaltantes.length - 1]}-12-31`
           ))
         );
       }
@@ -186,7 +210,7 @@ export async function GET(
     }
   }
 
-  // Promedio 1991-2020 por mes.
+  // Promedio del período histórico, mes a mes.
   const acumulado = new Map<number, { suma: number; n: number }>();
 
   for (const f of filas) {

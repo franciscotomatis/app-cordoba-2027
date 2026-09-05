@@ -80,11 +80,8 @@ export type LoteProps = {
 
 type Filtros = {
   texto: string;
-  cuit: string;
   cultivos: string[];
   causas: string[];
-  zonas: string[];
-  departamentos: string[];
   estados: string[];
   fecha: RangoFecha;
   soloSiniestros: boolean;
@@ -93,11 +90,8 @@ type Filtros = {
 
 const FILTROS_VACIOS: Filtros = {
   texto: "",
-  cuit: "",
   cultivos: [],
   causas: [],
-  zonas: [],
-  departamentos: [],
   estados: [],
   fecha: RANGO_VACIO,
   soloSiniestros: false,
@@ -525,7 +519,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
   // Los textos se difieren: escribir no bloquea el repintado del mapa.
   const textoDif = useDeferredValue(filtros.texto);
-  const cuitDif = useDeferredValue(filtros.cuit);
 
   useEffect(() => {
     seleccionRef.current = seleccion;
@@ -562,8 +555,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
         ),
         cuit: soloDigitos(p.cuit ?? ""),
         cultivo: p.cultivo?.trim() ?? "",
-        zona: p.zona?.trim() ?? "",
-        departamento: p.departamento?.trim() ?? "",
         causas: (p.siniestros ?? []).map((s) => s.causa?.trim() ?? ""),
         causaPrincipal: p.siniestros?.[0]?.causa?.trim() ?? null,
         estadosCaso: (p.siniestros ?? []).map((s) => s.estado ?? "DENUNCIADO"),
@@ -600,10 +591,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
         ...o,
         color: colorPorCultivo(o.valor).fill,
       })),
-      zonas: contar((p) => p.zona).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta)),
-      departamentos: contar((p) => p.departamento).sort((a, b) =>
-        a.etiqueta.localeCompare(b.etiqueta)
-      ),
       causas: [...causas.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([valor, cantidad]) => ({
@@ -626,11 +613,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
   const hayFiltros =
     textoDif.trim() !== "" ||
-    cuitDif.trim() !== "" ||
     filtros.cultivos.length > 0 ||
     filtros.causas.length > 0 ||
-    filtros.zonas.length > 0 ||
-    filtros.departamentos.length > 0 ||
     filtros.estados.length > 0 ||
     Boolean(filtros.fecha.desde || filtros.fecha.hasta) ||
     filtros.soloSiniestros ||
@@ -639,11 +623,11 @@ export default function MapaLotes({ rol }: { rol: string }) {
   // Conjunto de ids visibles + métricas del recorte, en una sola pasada.
   const recorte = useMemo(() => {
     const texto = normalizar(textoDif);
-    const cuit = soloDigitos(cuitDif);
+    // Si lo escrito son números, se prueba también contra el CUIT: un solo
+    // campo de búsqueda para asegurado, campo, lote, localidad y CUIT.
+    const cuit = soloDigitos(textoDif);
     const cultivos = new Set(filtros.cultivos);
     const causas = new Set(filtros.causas);
-    const zonas = new Set(filtros.zonas);
-    const deptos = new Set(filtros.departamentos);
     const estadosFiltro = new Set(filtros.estados);
 
     const elegidos = new Set(seleccion);
@@ -656,11 +640,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
     for (let i = 0; i < indice.length; i++) {
       const it = indice[i];
-      if (texto && !it.texto.includes(texto)) continue;
-      if (cuit && !it.cuit.includes(cuit)) continue;
+      if (texto && !it.texto.includes(texto) && !(cuit && it.cuit.includes(cuit)))
+        continue;
       if (cultivos.size && !cultivos.has(it.cultivo)) continue;
-      if (zonas.size && !zonas.has(it.zona)) continue;
-      if (deptos.size && !deptos.has(it.departamento)) continue;
       if (causas.size && !it.causas.some((c) => causas.has(c))) continue;
       if (estadosFiltro.size && !it.estadosCaso.some((e) => estadosFiltro.has(e))) continue;
       if (
@@ -694,11 +676,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
   }, [
     indice,
     textoDif,
-    cuitDif,
     filtros.cultivos,
     filtros.causas,
-    filtros.zonas,
-    filtros.departamentos,
     filtros.estados,
     filtros.fecha,
     filtros.soloSiniestros,
@@ -962,8 +941,8 @@ export default function MapaLotes({ rol }: { rol: string }) {
             valor={filtros.texto}
             onChange={(v) => setFiltros((f) => ({ ...f, texto: v }))}
             sugerencias={opciones.clientes}
-            placeholder="Asegurado, campo, lote o localidad..."
-            ancho="w-full sm:w-72"
+            placeholder="Asegurado, CUIT, campo, lote o localidad..."
+            ancho="w-full sm:w-80"
           />
 
           <button
@@ -981,13 +960,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
           <div
             className={`${filtrosAbiertos ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 sm:flex sm:w-auto`}
           >
-          <input
-            value={filtros.cuit}
-            onChange={(e) => setFiltros((f) => ({ ...f, cuit: e.target.value }))}
-            placeholder="CUIT"
-            className="mono w-32 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[12.5px] outline-none placeholder:font-sans placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-accent)]"
-          />
-
           <FiltroMulti
             titulo="Cultivo"
             opciones={opciones.cultivos}
@@ -1015,21 +987,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
             onChange={(v) => setFiltros((f) => ({ ...f, estados: v }))}
             ancho="w-44"
           />
-          <FiltroMulti
-            titulo="Zona"
-            opciones={opciones.zonas}
-            seleccion={filtros.zonas}
-            onChange={(v) => setFiltros((f) => ({ ...f, zonas: v }))}
-            ancho="w-32"
-          />
-          <FiltroMulti
-            titulo="Depto."
-            opciones={opciones.departamentos}
-            seleccion={filtros.departamentos}
-            onChange={(v) => setFiltros((f) => ({ ...f, departamentos: v }))}
-            ancho="w-36"
-          />
-
           <div className="flex items-center gap-0.5 rounded-md border border-[var(--color-border)] p-0.5">
             {(["cultivo", "siniestro"] as const).map((modo) => (
               <button

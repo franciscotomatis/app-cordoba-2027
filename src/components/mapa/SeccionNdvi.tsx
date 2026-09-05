@@ -323,11 +323,6 @@ export function SeccionNdvi({
             </p>
           )}
         </div>
-
-        <p className="mt-1 text-[10.5px] text-[var(--color-ink-faint)]">
-          La imagen se pide a Sentinel-2 al apretar el botón y queda guardada, así no
-          se vuelve a consumir cuota si se mira de nuevo.
-        </p>
       </section>
     </>
   );
