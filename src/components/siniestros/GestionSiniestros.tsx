@@ -26,6 +26,7 @@ import {
 import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exportar";
 import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
 import { invalidarLotes } from "@/lib/datosMapa";
+import { useEstadoGuardado } from "@/lib/estadoGuardado";
 import { FiltroMulti } from "@/components/mapa/FiltroMulti";
 import { BuscadorTexto } from "@/components/mapa/BuscadorTexto";
 import { CeldaRinde } from "./CeldaRinde";
@@ -218,14 +219,15 @@ export function GestionSiniestros({
   // toda la unidad CUIT+cultivo.
   const incluirSinDenuncia = alcance !== "denunciados";
 
-  const [texto, setTexto] = useState("");
-  const [cuit, setCuit] = useState("");
-  const [causas, setCausas] = useState<string[]>([]);
-  const [cultivos, setCultivos] = useState<string[]>([]);
-  const [estados, setEstados] = useState<string[]>([]);
-  const [zonas, setZonas] = useState<string[]>([]);
-  const [peritosFiltro, setPeritosFiltro] = useState<string[]>([]);
-  const [soloSeleccionMapa, setSoloSeleccionMapa] = useState(false);
+  // Los filtros sobreviven al ir y volver de otra pestaña.
+  const [texto, setTexto] = useEstadoGuardado("siniestros.texto", "");
+  const [cuit, setCuit] = useEstadoGuardado("siniestros.cuit", "");
+  const [causas, setCausas] = useEstadoGuardado<string[]>("siniestros.causas", []);
+  const [cultivos, setCultivos] = useEstadoGuardado<string[]>("siniestros.cultivos", []);
+  const [estados, setEstados] = useEstadoGuardado<string[]>("siniestros.estados", []);
+  const [zonas, setZonas] = useEstadoGuardado<string[]>("siniestros.zonas", []);
+  const [peritosFiltro, setPeritosFiltro] = useEstadoGuardado<string[]>("siniestros.peritos", []);
+  const [soloSeleccionMapa, setSoloSeleccionMapa] = useEstadoGuardado("siniestros.soloSeleccion", false);
   const [seleccionMapa, setSeleccionMapa] = useState<string[]>([]);
 
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());

@@ -1,6 +1,7 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState } from "react";
+import { useEstadoGuardado } from "@/lib/estadoGuardado";
 import { AlertTriangle, FileDown, FileSpreadsheet, FileText } from "lucide-react";
 import { colorPorCultivo } from "@/lib/colores";
 import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exportar";
@@ -86,10 +87,14 @@ const COLUMNAS: Columna<ClienteCultivo>[] = [
 ];
 
 export function TablaClientes({ filas }: { filas: ClienteCultivo[] }) {
-  const [texto, setTexto] = useState("");
-  const [cultivos, setCultivos] = useState<string[]>([]);
-  const [soloConIndemnizacion, setSoloConIndemnizacion] = useState(false);
-  const [pagina, setPagina] = useState(0);
+  // Igual que en el resto: cambiar de pestaña no descarta el recorte.
+  const [texto, setTexto] = useEstadoGuardado("clientes.texto", "");
+  const [cultivos, setCultivos] = useEstadoGuardado<string[]>("clientes.cultivos", []);
+  const [soloConIndemnizacion, setSoloConIndemnizacion] = useEstadoGuardado(
+    "clientes.soloConIndemnizacion",
+    false
+  );
+  const [pagina, setPagina] = useEstadoGuardado("clientes.pagina", 0);
 
   const textoDif = useDeferredValue(texto);
 

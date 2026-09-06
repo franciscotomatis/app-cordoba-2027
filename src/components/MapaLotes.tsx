@@ -16,6 +16,7 @@ import {
   LayerGroup,
   GeoJSON,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import type { Feature, FeatureCollection } from "geojson";
@@ -36,6 +37,7 @@ import { CapaLimites } from "./mapa/CapaLimites";
 import { PanelLote, type LoteDetalle } from "./mapa/PanelLote";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
+import { guardar, leerGuardado } from "@/lib/estadoGuardado";
 import { FiltroMulti } from "./mapa/FiltroMulti";
 import { AZULES, type EscalaLluvia } from "@/lib/escalaLluvia";
 import { CapaLluvia } from "./mapa/CapaLluvia";
@@ -466,10 +468,23 @@ function EditorRindeEnPopup({
 }
 
 /** Encuadra el mapa usando los centroides (mucho más barato que recorrer geometrías). */
-function Encuadre({ puntos }: { puntos: [number, number][] }) {
+function Encuadre({
+  puntos,
+  omitirPrimera,
+}: {
+  puntos: [number, number][];
+  omitirPrimera: boolean;
+}) {
   const map = useMap();
+  const primera = useRef(true);
   const firma = puntos.length + ":" + (puntos[0]?.join(",") ?? "");
   useEffect(() => {
+    // Al volver de otra pestaña con filtros ya puestos, se respeta dónde estaba
+    // mirando el usuario en vez de saltar al encuadre del recorte.
+    if (primera.current) {
+      primera.current = false;
+      if (omitirPrimera) return;
+    }
     if (puntos.length === 0) return;
     const bounds = L.latLngBounds(puntos.map(([lat, lon]) => L.latLng(lat, lon)));
     if (bounds.isValid()) {
@@ -481,14 +496,55 @@ function Encuadre({ puntos }: { puntos: [number, number][] }) {
   return null;
 }
 
+/** Guarda qué capas están prendidas y dónde quedó mirando el mapa. */
+function MemoriaDelMapa() {
+  const map = useMapEvents({
+    moveend: () => {
+      const c = map.getCenter();
+      guardar("mapa.vista", { lat: c.lat, lon: c.lng, zoom: map.getZoom() });
+    },
+    baselayerchange: (e) => {
+      const previo = leerGuardado("mapa.capas", { base: "Satélite", overlays: [] as string[] });
+      guardar("mapa.capas", { ...previo, base: e.name });
+    },
+    overlayadd: (e) => {
+      const previo = leerGuardado("mapa.capas", { base: "Satélite", overlays: [] as string[] });
+      guardar("mapa.capas", {
+        ...previo,
+        overlays: [...new Set([...previo.overlays, e.name])],
+      });
+    },
+    overlayremove: (e) => {
+      const previo = leerGuardado("mapa.capas", { base: "Satélite", overlays: [] as string[] });
+      guardar("mapa.capas", {
+        ...previo,
+        overlays: previo.overlays.filter((n) => n !== e.name),
+      });
+    },
+  });
+  return null;
+}
+
 export default function MapaLotes({ rol }: { rol: string }) {
   const puedeCargarRinde = rol === "admin" || rol === "perito";
   const [datos, setDatos] = useState<FeatureCollection | null>(lotesEnCache());
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(!lotesEnCache());
-  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS);
+  const [filtros, setFiltros] = useState<Filtros>(() =>
+    leerGuardado("mapa.filtros", FILTROS_VACIOS)
+  );
   const [gpsActivo, setGpsActivo] = useState(false);
-  const [colorPor, setColorPor] = useState<"cultivo" | "siniestro">("cultivo");
+  const [colorPor, setColorPor] = useState<"cultivo" | "siniestro">(() =>
+    leerGuardado<"cultivo" | "siniestro">("mapa.color", "cultivo")
+  );
+  // Capas y encuadre también se recuerdan: volver del listado no debería
+  // obligar a rearmar el mapa.
+  const [capas] = useState(() =>
+    leerGuardado("mapa.capas", { base: "Satélite", overlays: [] as string[] })
+  );
+  const [vista] = useState(() =>
+    leerGuardado<{ lat: number; lon: number; zoom: number } | null>("mapa.vista", null)
+  );
 
   // Capa de lluvia: se prende desde el panel de capas y tiene su propio panel
   // con el período y la escala.
@@ -519,6 +575,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
   // Los textos se difieren: escribir no bloquea el repintado del mapa.
   const textoDif = useDeferredValue(filtros.texto);
+
+  useEffect(() => guardar("mapa.filtros", filtros), [filtros]);
+  useEffect(() => guardar("mapa.color", colorPor), [colorPor]);
 
   useEffect(() => {
     seleccionRef.current = seleccion;
@@ -935,14 +994,13 @@ export default function MapaLotes({ rol }: { rol: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="relative z-[1300] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-4 sm:py-2.5">
-        <div className="flex items-start gap-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <BuscadorTexto
             valor={filtros.texto}
             onChange={(v) => setFiltros((f) => ({ ...f, texto: v }))}
             sugerencias={opciones.clientes}
-            placeholder="Asegurado, CUIT, campo, lote o localidad..."
-            ancho="w-full sm:w-80"
+            placeholder="Asegurado, CUIT, campo, lote..."
+            ancho="w-full sm:w-60"
           />
 
           <button
@@ -958,36 +1016,39 @@ export default function MapaLotes({ rol }: { rol: string }) {
           </button>
 
           <div
-            className={`${filtrosAbiertos ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 sm:flex sm:w-auto`}
+            className={`${filtrosAbiertos ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 sm:contents`}
           >
           <FiltroMulti
             titulo="Cultivo"
             opciones={opciones.cultivos}
             seleccion={filtros.cultivos}
             onChange={(v) => setFiltros((f) => ({ ...f, cultivos: v }))}
-            ancho="w-40"
+            ancho="w-36"
           />
           <FiltroMulti
             titulo="Siniestro"
             opciones={opciones.causas}
             seleccion={filtros.causas}
             onChange={(v) => setFiltros((f) => ({ ...f, causas: v }))}
-            ancho="w-40"
+            ancho="w-36"
           />
           <FiltroFecha
             titulo="Fecha stro."
             rango={filtros.fecha}
             onChange={(r) => setFiltros((f) => ({ ...f, fecha: r }))}
-            ancho="w-48"
+            ancho="w-40"
           />
           <FiltroMulti
             titulo="Estado"
             opciones={opciones.estados}
             seleccion={filtros.estados}
             onChange={(v) => setFiltros((f) => ({ ...f, estados: v }))}
-            ancho="w-44"
+            ancho="w-36"
           />
           <div className="flex items-center gap-0.5 rounded-md border border-[var(--color-border)] p-0.5">
+            <span className="pl-1.5 text-[11.5px] text-[var(--color-ink-faint)]">
+              Color
+            </span>
             {(["cultivo", "siniestro"] as const).map((modo) => (
               <button
                 key={modo}
@@ -1003,7 +1064,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
                     : "Pintar los lotes según la causa del siniestro"
                 }
               >
-                {modo === "cultivo" ? "Color: cultivo" : "Color: siniestro"}
+                {modo}
               </button>
             ))}
           </div>
@@ -1043,9 +1104,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
           )}
           </div>
 
-          </div>
-
-          <div className="flex shrink-0 items-baseline gap-1.5 pt-1.5 text-[12px] whitespace-nowrap">
+          <div className="ml-auto flex shrink-0 items-baseline gap-1.5 text-[12px] whitespace-nowrap">
             <span className="mono text-[13px] font-semibold">
               {recorte.lotes.toLocaleString("es-AR")}
             </span>
@@ -1313,33 +1372,38 @@ export default function MapaLotes({ rol }: { rol: string }) {
           GPS
         </button>
 
-        <MapContainer center={[-32.2, -63.5]} zoom={8} className="h-full w-full" preferCanvas>
+        <MapContainer
+          center={vista ? [vista.lat, vista.lon] : [-32.2, -63.5]}
+          zoom={vista?.zoom ?? 8}
+          className="h-full w-full"
+          preferCanvas
+        >
           <LayersControl position="topright">
-            <LayersControl.BaseLayer checked name="Satélite">
+            <LayersControl.BaseLayer checked={capas.base === "Satélite"} name="Satélite">
               <TileLayer
                 attribution="Esri"
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Híbrido">
+            <LayersControl.BaseLayer checked={capas.base === "Híbrido"} name="Híbrido">
               <TileLayer
                 attribution="Google"
                 url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
               />
             </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Gris">
+            <LayersControl.BaseLayer checked={capas.base === "Gris"} name="Gris">
               <TileLayer
                 attribution="Esri"
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Calles">
+            <LayersControl.BaseLayer checked={capas.base === "Calles"} name="Calles">
               <TileLayer
                 attribution="Esri"
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
               />
             </LayersControl.BaseLayer>
-            <LayersControl.Overlay name="Lluvia acumulada">
+            <LayersControl.Overlay checked={capas.overlays.includes("Lluvia acumulada")} name="Lluvia acumulada">
               <LayerGroup
                 eventHandlers={{
                   add: () => setCapaLluvia(true),
@@ -1350,19 +1414,19 @@ export default function MapaLotes({ rol }: { rol: string }) {
               </LayerGroup>
             </LayersControl.Overlay>
 
-            <LayersControl.Overlay name="Límite de Córdoba">
+            <LayersControl.Overlay checked={capas.overlays.includes("Límite de Córdoba")} name="Límite de Córdoba">
               <LayerGroup>
                 <CapaLimites tipo="provincia" />
               </LayerGroup>
             </LayersControl.Overlay>
 
-            <LayersControl.Overlay name="Departamentos">
+            <LayersControl.Overlay checked={capas.overlays.includes("Departamentos")} name="Departamentos">
               <LayerGroup>
                 <CapaLimites tipo="departamentos" />
               </LayerGroup>
             </LayersControl.Overlay>
 
-            <LayersControl.Overlay name="📷 Fotos de campo">
+            <LayersControl.Overlay checked={capas.overlays.includes("📷 Fotos de campo")} name="📷 Fotos de campo">
               <LayerGroup>
                 <CapaFotos />
               </LayerGroup>
@@ -1380,7 +1444,10 @@ export default function MapaLotes({ rol }: { rol: string }) {
             />
           )}
 
-          {hayFiltros && <Encuadre puntos={recorte.puntos} />}
+          {hayFiltros && (
+            <Encuadre puntos={recorte.puntos} omitirPrimera={vista !== null} />
+          )}
+          <MemoriaDelMapa />
           <Lazo activo={modoLazo} alTerminar={seleccionarConLazo} />
           <EditorRindeEnPopup
             onGuardar={guardarRindeDeLote}

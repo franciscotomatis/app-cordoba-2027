@@ -31,8 +31,11 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
   const isPublicAsset = request.nextUrl.pathname.startsWith("/_next");
+  // La tarea programada entra sin sesión: se autentica con su propio secreto
+  // dentro del handler, no con una cookie.
+  const isTareaProgramada = request.nextUrl.pathname.startsWith("/api/clima/actualizar");
 
-  if (!user && !isAuthRoute && !isPublicAsset) {
+  if (!user && !isAuthRoute && !isPublicAsset && !isTareaProgramada) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

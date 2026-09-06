@@ -9,6 +9,8 @@
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 
+process.loadEnvFile?.(".env.local");
+
 const ZONA = "America/Argentina/Cordoba";
 const PUNTOS_POR_CONSULTA = 100;
 const DEMORA_DIAS = 6;
