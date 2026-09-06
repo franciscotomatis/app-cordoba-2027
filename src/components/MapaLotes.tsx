@@ -1103,25 +1103,6 @@ export default function MapaLotes({ rol }: { rol: string }) {
             </button>
           )}
           </div>
-
-          <div className="ml-auto flex shrink-0 items-baseline gap-1.5 text-[12px] whitespace-nowrap">
-            <span className="mono text-[13px] font-semibold">
-              {recorte.lotes.toLocaleString("es-AR")}
-            </span>
-            <span className="text-[var(--color-ink-faint)]">lotes</span>
-            <span className="mono ml-2 text-[13px] font-semibold">
-              {Math.round(recorte.hectareas).toLocaleString("es-AR")}
-            </span>
-            <span className="text-[var(--color-ink-faint)]">ha</span>
-            {recorte.conSiniestro > 0 && (
-              <>
-                <span className="mono ml-2 text-[13px] font-semibold text-[var(--color-danger)]">
-                  {recorte.conSiniestro.toLocaleString("es-AR")}
-                </span>
-                <span className="text-[var(--color-ink-faint)]">c/siniestro</span>
-              </>
-            )}
-          </div>
         </div>
       </div>
 
@@ -1163,7 +1144,28 @@ export default function MapaLotes({ rol }: { rol: string }) {
           </span>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          {/* El recorte vive acá y no arriba: en la barra de filtros se comía
+              un renglón entero para tres números. */}
+          <span className="flex items-baseline gap-1.5 text-[12px] whitespace-nowrap">
+            <span className="mono text-[13px] font-semibold">
+              {recorte.lotes.toLocaleString("es-AR")}
+            </span>
+            <span className="text-[var(--color-ink-faint)]">lotes</span>
+            <span className="mono ml-1.5 text-[13px] font-semibold">
+              {Math.round(recorte.hectareas).toLocaleString("es-AR")}
+            </span>
+            <span className="text-[var(--color-ink-faint)]">ha</span>
+            {recorte.conSiniestro > 0 && (
+              <>
+                <span className="mono ml-1.5 text-[13px] font-semibold text-[var(--color-danger)]">
+                  {recorte.conSiniestro.toLocaleString("es-AR")}
+                </span>
+                <span className="text-[var(--color-ink-faint)]">c/siniestro</span>
+              </>
+            )}
+          </span>
+
           <span className="text-[12px] text-[var(--color-ink-muted)]">
             <span className="mono font-semibold text-[var(--color-ink)]">{seleccionados}</span>{" "}
             seleccionados
