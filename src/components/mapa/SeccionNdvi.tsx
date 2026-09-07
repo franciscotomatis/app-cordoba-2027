@@ -14,36 +14,13 @@ import {
 import { ImageOverlay, MapContainer, GeoJSON as CapaGeoJson, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import type { Geometry } from "geojson";
-import { Droplets, Loader2, Satellite } from "lucide-react";
+import { Loader2, Satellite } from "lucide-react";
 import { colorNdvi, ESCALA_NDVI, paradasDeColor } from "@/lib/ndvi";
 
-type Punto = {
-  fecha: string;
-  ndvi: number;
-  agua: number | null;
-  nubosidad: number | null;
-};
-
-/**
- * Anegamiento visto por el satélite. "ventanaDias" es el lapso entre la
- * primera y la última pasada con agua, no los días que el lote estuvo bajo
- * agua: Sentinel-2 pasa cada cinco días y las nubes tapan justo cuando llueve.
- */
-type Agua = {
-  fechas: number;
-  primera: string;
-  ultima: string;
-  maximo: number;
-  fechaMaximo: string;
-  ventanaDias: number;
-  detalle: { fecha: string; agua: number }[];
-} | null;
-
-type Indice = "ndvi" | "agua";
+type Punto = { fecha: string; ndvi: number; nubosidad: number | null };
 
 type Respuesta = {
   serie: Punto[];
-  agua: Agua;
   resumen: {
     desde: string;
     hasta: string;
@@ -86,34 +63,6 @@ function limites(g: Geometry): L.LatLngBoundsExpression {
   ];
 }
 
-function Cifra({
-  rotulo,
-  valor,
-  detalle,
-  destacado,
-}: {
-  rotulo: string;
-  valor: string;
-  detalle: string;
-  destacado?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-[10.5px] text-[var(--color-ink-faint)]">{rotulo}</p>
-      <p
-        className={`mono text-[14px] font-semibold ${
-          destacado ? "text-[#2979ff]" : ""
-        }`}
-      >
-        {valor}
-      </p>
-      {detalle && (
-        <p className="text-[10px] text-[var(--color-ink-faint)]">{detalle}</p>
-      )}
-    </div>
-  );
-}
-
 export function SeccionNdvi({
   loteId,
   geometria,
@@ -126,7 +75,6 @@ export function SeccionNdvi({
   const [fechaImagen, setFechaImagen] = useState<string>("");
   const [imagen, setImagen] = useState<string | null>(null);
   const [cargandoImagen, setCargandoImagen] = useState(false);
-  const [indice, setIndice] = useState<Indice>("ndvi");
   const [errorImagen, setErrorImagen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -153,9 +101,7 @@ export function SeccionNdvi({
     setImagen(null);
 
     try {
-      const r = await fetch(
-        `/api/lotes/${loteId}/ndvi/imagen?fecha=${fechaImagen}&indice=${indice}`
-      );
+      const r = await fetch(`/api/lotes/${loteId}/ndvi/imagen?fecha=${fechaImagen}`);
       if (!r.ok) {
         const d = await r.json().catch(() => ({ error: "No se pudo traer la imagen." }));
         setErrorImagen(d.error ?? "No se pudo traer la imagen.");
@@ -310,93 +256,12 @@ export function SeccionNdvi({
         )}
       </section>
 
-      {/* Agua en superficie: sin gráfico, solo lo que hace falta saber */}
-      {datos?.agua && (
-        <section className="rounded-md border border-[var(--color-border)] p-3">
-          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
-            <Droplets className="h-3.5 w-3.5" />
-            Agua en superficie
-          </p>
-
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
-            <Cifra
-              rotulo="Pasadas con agua"
-              valor={String(datos.agua.fechas)}
-              detalle={`de ${datos.serie.length}`}
-            />
-            <Cifra
-              rotulo="Máximo anegado"
-              valor={`${Math.round(datos.agua.maximo * 100)}%`}
-              detalle={`el ${fechaCorta(datos.agua.fechaMaximo)}`}
-              destacado
-            />
-            <Cifra
-              rotulo="Primera vez"
-              valor={fechaCorta(datos.agua.primera)}
-              detalle=""
-            />
-            <Cifra
-              rotulo="Última vez"
-              valor={fechaCorta(datos.agua.ultima)}
-              detalle={`ventana de ${datos.agua.ventanaDias} días`}
-            />
-          </div>
-
-          <div className="mt-2 flex flex-wrap gap-1">
-            {datos.agua.detalle.map((d) => (
-              <button
-                key={d.fecha}
-                onClick={() => {
-                  setFechaImagen(d.fecha);
-                  setIndice("agua");
-                }}
-                title={`Ver el lote el ${fechaCorta(d.fecha)}`}
-                className="mono rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10.5px] text-[var(--color-ink-muted)] transition-colors hover:border-[#2979ff] hover:text-[#2979ff]"
-              >
-                {fechaCorta(d.fecha)} · {Math.round(d.agua * 100)}%
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-2 text-[10.5px] text-[var(--color-ink-faint)]">
-            Sentinel-2 pasa cada cinco días y no ve a través de las nubes, que
-            es justo lo que sobra cuando se inunda. Esto es lo que se llegó a
-            ver: el lote pudo haber estado con agua entre dos pasadas sin que
-            quede registro.
-          </p>
-        </section>
-      )}
-
-      {/* Imagen del lote en una fecha */}
+      {/* Imagen NDVI del lote en una fecha */}
       <section className="rounded-md border border-[var(--color-border)] p-3">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <p className="text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
             Imagen del lote
           </p>
-
-          <div className="flex items-center gap-0.5 rounded-md border border-[var(--color-border)] p-0.5">
-            {(
-              [
-                ["ndvi", "Índice verde"],
-                ["agua", "Agua"],
-              ] as [Indice, string][]
-            ).map(([valor, etiqueta]) => (
-              <button
-                key={valor}
-                onClick={() => {
-                  setIndice(valor);
-                  setImagen(null);
-                }}
-                className={`rounded px-2 py-0.5 text-[11.5px] transition-colors ${
-                  indice === valor
-                    ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
-                    : "text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]"
-                }`}
-              >
-                {etiqueta}
-              </button>
-            ))}
-          </div>
 
           <div className="ml-auto flex items-center gap-1.5">
             <select

@@ -44,8 +44,8 @@ export async function GET(
 
   // Versión del guion que se le manda a Copernicus. Al subirla, las series
   // pedidas con la versión anterior se rehacen solas la próxima vez que
-  // alguien abra el lote. La 2 agrega el agua en superficie.
-  const VERSION_SERIE = 2;
+  // alguien abra el lote.
+  const VERSION_SERIE = 1;
 
   // Se vuelve a pedir si nunca se consultó, si cambió el guion, o si pasó más
   // de una semana.
@@ -85,7 +85,6 @@ export async function GET(
               lote_id: loteId,
               fecha: p.fecha,
               ndvi: p.ndvi,
-              agua: p.agua,
               nubosidad: 1 - p.cobertura,
             })),
             { onConflict: "lote_id,fecha" }
@@ -123,48 +122,19 @@ export async function GET(
 
   const { data: serie } = await supabase
     .from("ndvi_lote")
-    .select("fecha, ndvi, agua, nubosidad")
+    .select("fecha, ndvi, nubosidad")
     .eq("lote_id", loteId)
     .gte("fecha", desdeISO)
     .order("fecha");
 
   const valores = (serie ?? []).map((p) => Number(p.ndvi));
 
-  // Anegamiento: qué pasadas vieron agua sobre el lote y cuánta.
-  // Se cuenta desde el 5% del lote para arriba; por debajo suele ser ruido de
-  // borde (una cuneta, un bebedero) y no un lote con agua.
-  const MINIMO_RELEVANTE = 0.05;
-  const conAgua = (serie ?? [])
-    .filter((p) => p.agua !== null && Number(p.agua) >= MINIMO_RELEVANTE)
-    .map((p) => ({ fecha: p.fecha as string, agua: Number(p.agua) }));
-
-  const agua = conAgua.length
-    ? {
-        fechas: conAgua.length,
-        primera: conAgua[0].fecha,
-        ultima: conAgua[conAgua.length - 1].fecha,
-        maximo: Math.max(...conAgua.map((p) => p.agua)),
-        fechaMaximo: conAgua.reduce((a, b) => (b.agua > a.agua ? b : a)).fecha,
-        // Días entre la primera y la última pasada con agua. No es "días
-        // anegado": es la ventana en la que se lo vio así.
-        ventanaDias:
-          Math.round(
-            (new Date(conAgua[conAgua.length - 1].fecha).getTime() -
-              new Date(conAgua[0].fecha).getTime()) /
-              86400000
-          ) + 5,
-        detalle: conAgua,
-      }
-    : null;
-
   return NextResponse.json({
     serie: (serie ?? []).map((p) => ({
       fecha: p.fecha,
       ndvi: Number(p.ndvi),
-      agua: p.agua === null ? null : Number(p.agua),
       nubosidad: p.nubosidad === null ? null : Number(p.nubosidad),
     })),
-    agua,
     resumen: valores.length
       ? {
           desde: serie![0].fecha,

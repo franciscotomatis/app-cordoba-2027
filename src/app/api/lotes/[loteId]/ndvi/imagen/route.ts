@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { hayCredenciales, imagenNdvi, type Indice } from "@/lib/copernicus";
+import { hayCredenciales, imagenNdvi } from "@/lib/copernicus";
 import type { Geometry } from "geojson";
 
-/**
- * Imagen del lote en una fecha: índice verde (ndvi) o agua en superficie
- * (agua). Se cachea en Storage para no repetirle el pedido a Copernicus.
- */
+/** Imagen NDVI del lote en una fecha. Se cachea en Storage para no repetir el pedido. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ loteId: string }> }
 ) {
   const { loteId } = await params;
-  const parametros = new URL(request.url).searchParams;
-  const fecha = parametros.get("fecha");
-  const indice: Indice = parametros.get("indice") === "agua" ? "agua" : "ndvi";
+  const fecha = new URL(request.url).searchParams.get("fecha");
 
   if (!fecha) {
     return NextResponse.json({ error: "Falta la fecha." }, { status: 400 });
@@ -40,7 +35,7 @@ export async function GET(
   // imagen, las guardadas con la receta anterior dejan de usarse solas, sin
   // tener que salir a borrar nada.
   const VERSION = "v2";
-  const ruta = `${loteId}/${fecha}-${indice}-${VERSION}.png`;
+  const ruta = `${loteId}/${fecha}-${VERSION}.png`;
 
   // Si ya se pidió esa imagen antes, se sirve la guardada.
   const { data: guardada } = await supabase.storage.from("ndvi").download(ruta);
@@ -58,7 +53,7 @@ export async function GET(
   }
 
   try {
-    const png = await imagenNdvi(lote.geometry as Geometry, fecha, indice);
+    const png = await imagenNdvi(lote.geometry as Geometry, fecha);
 
     const { error: errorGuardado } = await supabase.storage
       .from("ndvi")
