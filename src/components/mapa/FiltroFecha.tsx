@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CAMPANIA } from "@/lib/campania";
 import { CalendarDays, ChevronDown } from "lucide-react";
 
 export type RangoFecha = { desde: string; hasta: string };
@@ -61,7 +62,10 @@ export function FiltroFecha({
     { etiqueta: "Últimos 7 días", rango: { desde: haceDias(7), hasta: hoy() } },
     { etiqueta: "Últimos 30 días", rango: { desde: haceDias(30), hasta: hoy() } },
     { etiqueta: "Últimos 90 días", rango: { desde: haceDias(90), hasta: hoy() } },
-    { etiqueta: "Campaña 25/26", rango: { desde: "2025-07-01", hasta: "2026-06-30" } },
+    {
+      etiqueta: `Campaña ${CAMPANIA.etiqueta}`,
+      rango: { desde: CAMPANIA.desde, hasta: CAMPANIA.hasta },
+    },
   ];
 
   return (

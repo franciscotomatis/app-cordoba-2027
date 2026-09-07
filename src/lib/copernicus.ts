@@ -21,6 +21,11 @@ const PROCESO_URL = "https://sh.dataspace.copernicus.eu/api/v1/process";
 // Nubes: se descartan las fechas con poca superficie válida.
 const COBERTURA_MINIMA = 0.6;
 
+// NDWI por encima de este valor se toma como agua en superficie. Cero es el
+// umbral clásico de McFeeters; 0,1 recorta los falsos positivos de suelo muy
+// húmedo o de sombra, a costa de perder láminas de agua muy finas.
+const UMBRAL_AGUA = 0.1;
+
 // Con las geometrías en EPSG:4326 la resolución que espera Copernicus va en
 // GRADOS, no en metros. 0,0001° son unos 11 m en latitud y ~9 m en longitud a
 // la altura de Córdoba, es decir la resolución nativa de Sentinel-2.
@@ -77,9 +82,10 @@ const GUION_ESTADISTICA = `
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["B04", "B08", "SCL", "dataMask"] }],
+    input: [{ bands: ["B03", "B04", "B08", "SCL", "dataMask"] }],
     output: [
       { id: "ndvi", bands: 1, sampleType: "FLOAT32" },
+      { id: "agua", bands: 1, sampleType: "FLOAT32" },
       { id: "dataMask", bands: 1 }
     ]
   };
@@ -91,10 +97,23 @@ function evaluatePixel(s) {
     valido = 0;
   }
   var ndvi = (s.B08 + s.B04) === 0 ? 0 : (s.B08 - s.B04) / (s.B08 + s.B04);
-  return { ndvi: [ndvi], dataMask: [valido] };
+
+  // NDWI de McFeeters: verde contra infrarrojo cercano. Sobre cero es agua en
+  // superficie. Se devuelve como 1/0 en lugar del índice crudo porque así el
+  // promedio del lote ES directamente la fracción anegada, sin cálculo aparte.
+  var ndwi = (s.B03 + s.B08) === 0 ? -1 : (s.B03 - s.B08) / (s.B03 + s.B08);
+  var agua = ndwi > ${UMBRAL_AGUA} ? 1 : 0;
+
+  return { ndvi: [ndvi], agua: [agua], dataMask: [valido] };
 }`;
 
-export type PuntoNdvi = { fecha: string; ndvi: number; cobertura: number };
+export type PuntoNdvi = {
+  fecha: string;
+  ndvi: number;
+  cobertura: number;
+  /** Fracción del lote con agua en superficie, de 0 a 1. */
+  agua: number;
+};
 
 export type ResultadoNdvi = {
   puntos: PuntoNdvi[];
@@ -142,7 +161,10 @@ export async function serieNdvi(
         resx: RESOLUCION_GRADOS,
         resy: RESOLUCION_GRADOS,
       },
-      calculations: { ndvi: { statistics: { default: {} } } },
+      calculations: {
+        ndvi: { statistics: { default: {} } },
+        agua: { statistics: { default: {} } },
+      },
     }),
   });
 
@@ -159,6 +181,7 @@ export async function serieNdvi(
         ndvi?: {
           bands?: { B0?: { stats?: { mean?: number; sampleCount?: number; noDataCount?: number } } };
         };
+        agua?: { bands?: { B0?: { stats?: { mean?: number } } } };
       };
     }[];
   };
@@ -173,7 +196,7 @@ export async function serieNdvi(
   // porque un lote de forma irregular ocupa solo una parte de su rectángulo y
   // ese descuento es geométrico, no nubosidad. La referencia es la fecha más
   // despejada del período: sobre esa se mide cuánto tapan las nubes al resto.
-  const medidas: { fecha: string; ndvi: number; validos: number }[] = [];
+  const medidas: { fecha: string; ndvi: number; agua: number; validos: number }[] = [];
 
   for (const tramo of datos.data ?? []) {
     if (tramo.error) {
@@ -191,6 +214,8 @@ export async function serieNdvi(
     medidas.push({
       fecha: tramo.interval.from.slice(0, 10),
       ndvi: Math.round(stats.mean * 1000) / 1000,
+      // El promedio de una banda de unos y ceros es la proporción de unos.
+      agua: Math.round((tramo.outputs?.agua?.bands?.B0?.stats?.mean ?? 0) * 1000) / 1000,
       validos: (stats.sampleCount ?? 0) - (stats.noDataCount ?? 0),
     });
   }
@@ -212,6 +237,7 @@ export async function serieNdvi(
     puntos.push({
       fecha: m.fecha,
       ndvi: m.ndvi,
+      agua: m.agua,
       cobertura: Math.round(cobertura * 100) / 100,
     });
   }
@@ -260,6 +286,34 @@ function evaluatePixel(s) {
   return [c[0], c[1], c[2], 1];
 }`;
 
+/**
+ * Imagen de agua en superficie: el lote apagado y encima, en azul, lo que el
+ * NDWI marca como agua. Se ve el charco sobre el propio lote en vez de tener
+ * que interpretar una escala de colores.
+ */
+const GUION_IMAGEN_AGUA = `
+//VERSION=3
+function setup() {
+  return {
+    input: ["B03", "B04", "B08", "SCL", "dataMask"],
+    output: { bands: 4 }
+  };
+}
+function evaluatePixel(s) {
+  if (s.dataMask === 0) return [0, 0, 0, 0];
+  if (s.SCL === 3 || s.SCL === 8 || s.SCL === 9 || s.SCL === 10 || s.SCL === 11) {
+    return [0.85, 0.85, 0.88, 0.7];
+  }
+  var ndwi = (s.B03 + s.B08) === 0 ? -1 : (s.B03 - s.B08) / (s.B03 + s.B08);
+  if (ndwi > 0.3) return [0.05, 0.24, 0.62, 1];
+  if (ndwi > ${UMBRAL_AGUA}) return [0.16, 0.5, 0.85, 1];
+  if (ndwi > 0.0) return [0.55, 0.75, 0.9, 1];
+  // Sin agua: gris verdoso apagado, para que el azul resalte.
+  var ndvi = (s.B08 + s.B04) === 0 ? 0 : (s.B08 - s.B04) / (s.B08 + s.B04);
+  var v = 0.55 + ndvi * 0.2;
+  return [v * 0.85, v, v * 0.78, 1];
+}`;
+
 /** Extremos de la geometría, en grados. */
 function extremos(g: Geometry) {
   const lats: number[] = [];
@@ -281,9 +335,12 @@ function extremos(g: Geometry) {
   };
 }
 
+export type Indice = "ndvi" | "agua";
+
 export async function imagenNdvi(
   geometria: Geometry,
-  fecha: string
+  fecha: string,
+  indice: Indice = "ndvi"
 ): Promise<ArrayBuffer> {
   const token = await obtenerToken();
 
@@ -340,7 +397,7 @@ export async function imagenNdvi(
         height: alto,
         responses: [{ identifier: "default", format: { type: "image/png" } }],
       },
-      evalscript: GUION_IMAGEN,
+      evalscript: indice === "agua" ? GUION_IMAGEN_AGUA : GUION_IMAGEN,
     }),
   });
 

@@ -198,7 +198,7 @@ export function graficoTemperaturas(
 /** Precipitación mensual: la campaña contra el promedio histórico. */
 export function graficoPrecipitacion(
   serie: { mes: string; actual: number | null; historico: number | null }[],
-  anio: number
+  campania: string
 ) {
   const ancho = 1000;
   const alto = 340;
@@ -265,7 +265,7 @@ export function graficoPrecipitacion(
   referencias(
     ctx,
     [
-      { color: "#2979ff", etiqueta: `Campaña ${anio}` },
+      { color: "#2979ff", etiqueta: `Campaña ${campania}` },
       { color: TENUE, etiqueta: "Promedio histórico", guiones: true },
     ],
     caja,

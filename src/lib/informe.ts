@@ -3,6 +3,7 @@
 import { colorNdvi } from "./ndvi";
 import { graficoNdvi, graficoPrecipitacion, graficoTemperaturas } from "./graficos";
 import { ETIQUETA_ESTADO } from "./siniestros";
+import { CAMPANIA } from "./campania";
 
 /**
  * Informe de campaña en PDF: una ficha por lote con los datos de cobertura,
@@ -41,7 +42,7 @@ export type LoteInforme = {
 };
 
 type Clima = {
-  anio: number;
+  campania: string;
   serie: { mes: string; actual: number | null; historico: number | null }[];
   temperatura: { fecha: string; min: number; max: number }[];
   resumenTemperatura: {
@@ -236,7 +237,7 @@ export async function generarInforme(
     doc.setTextColor(...tinta);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(21);
-    doc.text("Informe de campaña 25/26", MARGEN, y);
+    doc.text(`Informe de campaña ${CAMPANIA.etiqueta}`, MARGEN, y);
 
     y += 22;
     doc.setFont("helvetica", "normal");
@@ -364,7 +365,7 @@ export async function generarInforme(
     }
     if (clima && clima.serie.length > 1) {
       doc.addImage(
-        graficoPrecipitacion(clima.serie, clima.anio),
+        graficoPrecipitacion(clima.serie, clima.campania),
         "PNG",
         MARGEN,
         y,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { CAMPANIA, MESES_CAMPANIA } from "@/lib/campania";
 
 /**
  * Precipitación mensual del lote: promedio histórico contra el año en curso.
@@ -14,11 +15,20 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 const INICIO_NORMAL = 1991;
-// El histórico llega hasta el último año COMPLETO: la media se corre sola cada
-// enero en vez de quedar clavada en un período fijo. La normal oficial de la
-// OMM es 1991-2020; acá se usa una serie más larga porque para comparar una
-// campaña lo que sirve es el clima reciente, no el de hace treinta años.
-const FIN_NORMAL = new Date().getFullYear() - 1;
+// El histórico termina el año antes de que arranque la campaña. Si llegara
+// hasta hoy, la campaña se estaría comparando contra un promedio que la
+// contiene. La normal oficial de la OMM es 1991-2020; acá la serie es más
+// larga porque para juzgar una campaña sirve el clima reciente, no el de hace
+// treinta años.
+const FIN_NORMAL = Number(CAMPANIA.desde.slice(0, 4)) - 1;
+
+/** Último día con dato: el reanálisis publica con unos días de atraso. */
+function ultimoDiaDisponible() {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  const iso = d.toISOString().slice(0, 10);
+  return iso < CAMPANIA.hasta ? iso : CAMPANIA.hasta;
+}
 const ZONA = "America/Argentina/Cordoba";
 
 const aCelda = (v: number) => Math.round(v * 10) / 10;
@@ -116,7 +126,6 @@ export async function GET(
 
   const lat = aCelda(lote.lat);
   const lon = aCelda(lote.lon);
-  const anioActual = new Date().getFullYear();
 
   const { data: guardado } = await supabase
     .from("clima_celda")
@@ -143,15 +152,27 @@ export async function GET(
     if ((mesesPorAnio.get(a) ?? 0) < 12 || aEstrenar.has(a)) aniosFaltantes.push(a);
   }
 
-  const mesActual = new Date().getMonth() + 1;
-  const filaMesActual = filas.find((f) => f.anio === anioActual && f.mes === mesActual);
-  // El mes en curso se rehace una vez por día: si no, el valor queda congelado
-  // en los milímetros que llevaba el día que se miró por primera vez.
-  const mesEnCursoVencido =
-    !filaMesActual ||
-    Date.now() - new Date(filaMesActual.actualizado_en ?? 0).getTime() > 86_400_000;
+  // Meses de la campaña que ya transcurrieron y deberían tener dato.
+  const finDatos = ultimoDiaDisponible();
+  const mesesEsperados = MESES_CAMPANIA.filter(
+    (m) => `${m.anio}-${String(m.mes).padStart(2, "0")}-01` <= finDatos
+  );
+  const ultimoEsperado = mesesEsperados[mesesEsperados.length - 1];
+  const filaUltimo = ultimoEsperado
+    ? filas.find((f) => f.anio === ultimoEsperado.anio && f.mes === ultimoEsperado.mes)
+    : undefined;
+
+  // Mientras la campaña corre, su último mes se rehace una vez por día: si no,
+  // queda congelado en los milímetros que llevaba cuando se miró por primera
+  // vez. Terminada la campaña el dato ya es definitivo y no se vuelve a pedir.
+  const campaniaEnCurso = finDatos < CAMPANIA.hasta;
   const faltaActual =
-    filas.filter((f) => f.anio === anioActual).length < mesActual || mesEnCursoVencido;
+    mesesEsperados.some(
+      (m) => !filas.some((f) => f.anio === m.anio && f.mes === m.mes)
+    ) ||
+    (campaniaEnCurso &&
+      (!filaUltimo ||
+        Date.now() - new Date(filaUltimo.actualizado_en ?? 0).getTime() > 86_400_000));
 
   if (aniosFaltantes.length > 0 || faltaActual) {
     const nuevas: FilaClima[] = [];
@@ -168,16 +189,7 @@ export async function GET(
         );
       }
       if (faltaActual) {
-        const hoy = new Date();
-        hoy.setDate(hoy.getDate() - 6); // el reanálisis tiene unos días de demora
-        nuevas.push(
-          ...(await bajarDeOpenMeteo(
-            lat,
-            lon,
-            `${anioActual}-01-01`,
-            hoy.toISOString().slice(0, 10)
-          ))
-        );
+        nuevas.push(...(await bajarDeOpenMeteo(lat, lon, CAMPANIA.desde, finDatos)));
       }
     } catch (e) {
       // Si la fuente falla, se responde con lo que haya en caché.
@@ -221,19 +233,21 @@ export async function GET(
     acumulado.set(f.mes, a);
   }
 
-  const actualPorMes = new Map(
-    filas.filter((f) => f.anio === anioActual).map((f) => [f.mes, Number(f.pp_mm)])
+  // La serie sigue el año agrícola, de julio a junio: partirla por año
+  // calendario cortaría la campaña justo en el medio del verano.
+  const porAnioMes = new Map(
+    filas.map((f) => [`${f.anio}-${f.mes}`, Number(f.pp_mm)])
   );
 
-  const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-
-  const serie = MESES.map((etiqueta, i) => {
-    const mes = i + 1;
-    const h = acumulado.get(mes);
+  const serie = MESES_CAMPANIA.map((m) => {
+    const h = acumulado.get(m.mes);
+    const actual = porAnioMes.get(`${m.anio}-${m.mes}`);
     return {
-      mes: etiqueta,
+      mes: m.etiqueta,
+      anio: m.anio,
+      numeroMes: m.mes,
       historico: h && h.n > 0 ? Math.round((h.suma / h.n) * 10) / 10 : null,
-      actual: actualPorMes.has(mes) ? actualPorMes.get(mes)! : null,
+      actual: actual === undefined ? null : actual,
     };
   });
 
@@ -245,18 +259,15 @@ export async function GET(
     0
   );
 
-  // --- Temperatura: día a día de los últimos 12 meses ---
-  // Sirve para ver heladas y picos de calor, que un promedio mensual esconde.
-  const hastaTemp = new Date();
-  hastaTemp.setDate(hastaTemp.getDate() - 6); // demora del reanálisis
-  const desdeTemp = new Date(hastaTemp);
-  desdeTemp.setFullYear(desdeTemp.getFullYear() - 1);
-  const desdeISO = desdeTemp.toISOString().slice(0, 10);
-  const hastaISO = hastaTemp.toISOString().slice(0, 10);
+  // --- Día a día de la campaña ---
+  // El promedio mensual esconde las heladas y los golpes de calor, y también
+  // esconde si los 200 mm de un mes cayeron en una tarde o repartidos.
+  const desdeISO = CAMPANIA.desde;
+  const hastaISO = finDatos;
 
   let { data: dias } = await supabase
     .from("clima_dia")
-    .select("fecha, t_min, t_med, t_max")
+    .select("fecha, pp_mm, t_min, t_med, t_max")
     .eq("lat_celda", lat)
     .eq("lon_celda", lon)
     .gte("fecha", desdeISO)
@@ -265,7 +276,7 @@ export async function GET(
 
   const conTemperatura = (dias ?? []).filter((d) => d.t_med !== null).length;
   const esperados = Math.round(
-    (hastaTemp.getTime() - desdeTemp.getTime()) / 86400000
+    (new Date(hastaISO).getTime() - new Date(desdeISO).getTime()) / 86400000
   );
 
   // Si falta buena parte del período, se pide de nuevo y se guarda.
@@ -306,6 +317,7 @@ export async function GET(
 
           dias = filasDia.map((f) => ({
             fecha: f.fecha,
+            pp_mm: f.pp_mm,
             t_min: f.t_min,
             t_med: f.t_med,
             t_max: f.t_max,
@@ -348,9 +360,18 @@ export async function GET(
       }
     : null;
 
+  // Día a día también para la lluvia: es lo que permite mirar un mes puntual
+  // y ver en qué fechas cayó, en vez de un único número mensual.
+  const lluviaDiaria = (dias ?? [])
+    .filter((d) => d.pp_mm !== null && d.pp_mm !== undefined)
+    .map((d) => ({ fecha: d.fecha as string, mm: Number(d.pp_mm) }));
+
   return NextResponse.json({
-    anio: anioActual,
+    campania: CAMPANIA.etiqueta,
+    desde: CAMPANIA.desde,
+    hasta: finDatos,
     serie,
+    lluviaDiaria,
     temperatura: serieTemperatura,
     resumenTemperatura,
     totalHistorico: Math.round(totalHistorico),

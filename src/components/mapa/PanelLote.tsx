@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
+  Bar,
   CartesianGrid,
   ComposedChart,
   ReferenceLine,
@@ -54,8 +55,17 @@ export type LoteDetalle = {
 };
 
 type Clima = {
-  anio: number;
-  serie: { mes: string; historico: number | null; actual: number | null }[];
+  campania: string;
+  desde: string;
+  hasta: string;
+  serie: {
+    mes: string;
+    anio: number;
+    numeroMes: number;
+    historico: number | null;
+    actual: number | null;
+  }[];
+  lluviaDiaria: { fecha: string; mm: number }[];
   temperatura: {
     fecha: string;
     min: number;
@@ -133,6 +143,8 @@ export function PanelLote({
   onRindeGuardado: (loteId: string, valor: number | null) => void;
 }) {
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
+  // null = campaña completa; si no, "aaaa-mm" del mes que se está mirando.
+  const [mesElegido, setMesElegido] = useState<string | null>(null);
   const [clima, setClima] = useState<Clima | null>(null);
   const [errorClima, setErrorClima] = useState<string | null>(null);
   const [fotos, setFotos] = useState<Foto[] | null>(null);
@@ -266,6 +278,34 @@ export function PanelLote({
 
   const color = colorPorCultivo(lote.cultivo);
   const diferencia = clima ? clima.totalActual - clima.historicoALaFecha : 0;
+
+  // Al elegir un mes, los dos gráficos pasan al día a día de ese mes: la lluvia
+  // deja de ser un total mensual y se ve en qué fechas cayó, y la temperatura
+  // se abre lo suficiente como para leer una helada puntual.
+  const lluviaDelMes = useMemo(
+    () =>
+      !clima || !mesElegido
+        ? []
+        : clima.lluviaDiaria
+            .filter((d) => d.fecha.slice(0, 7) === mesElegido)
+            .map((d) => ({ ...d, dia: Number(d.fecha.slice(8, 10)) })),
+    [clima, mesElegido]
+  );
+
+  const temperaturaVisible = useMemo(
+    () =>
+      !clima
+        ? []
+        : mesElegido
+          ? clima.temperatura.filter((d) => d.fecha.slice(0, 7) === mesElegido)
+          : clima.temperatura,
+    [clima, mesElegido]
+  );
+
+  const mmDelMes = useMemo(
+    () => Math.round(lluviaDelMes.reduce((a, d) => a + d.mm, 0)),
+    [lluviaDelMes]
+  );
 
   return (
     <div
@@ -435,13 +475,16 @@ export function PanelLote({
               <section className="rounded-md border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <p className="text-[10px] font-semibold tracking-wide text-[var(--color-ink-faint)] uppercase">
-                    Precipitación mensual
+                    {mesElegido ? "Precipitación diaria" : "Precipitación mensual"}
                   </p>
-                  {clima && (
+                  {clima && !mesElegido && (
                     <>
                       <span className="mono text-[12px]">
                         <span className="font-semibold">{clima.totalActual}</span>
-                        <span className="text-[var(--color-ink-faint)]"> mm en {clima.anio}</span>
+                        <span className="text-[var(--color-ink-faint)]">
+                          {" "}
+                          mm en la campaña {clima.campania}
+                        </span>
                       </span>
                       <span className="mono text-[12px] text-[var(--color-ink-muted)]">
                         vs {clima.historicoALaFecha} mm normales a la fecha
@@ -458,7 +501,51 @@ export function PanelLote({
                       </span>
                     </>
                   )}
+                  {clima && mesElegido && (
+                    <span className="mono text-[12px]">
+                      <span className="font-semibold">{mmDelMes}</span>
+                      <span className="text-[var(--color-ink-faint)]">
+                        {" "}
+                        mm en {lluviaDelMes.filter((d) => d.mm > 0).length} día(s) de lluvia
+                      </span>
+                    </span>
+                  )}
                 </div>
+
+                {/* Un mes a la vez, para mirar de cerca una helada o un temporal */}
+                {clima && (
+                  <div className="mb-2 flex flex-wrap items-center gap-1">
+                    <button
+                      onClick={() => setMesElegido(null)}
+                      className={`rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+                        mesElegido === null
+                          ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                          : "text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-ink)]"
+                      }`}
+                    >
+                      Campaña
+                    </button>
+                    {clima.serie.map((m) => {
+                      const clave = `${m.anio}-${String(m.numeroMes).padStart(2, "0")}`;
+                      const hayDatos = m.actual !== null;
+                      return (
+                        <button
+                          key={clave}
+                          disabled={!hayDatos}
+                          onClick={() => setMesElegido(clave)}
+                          title={`${m.mes} ${m.anio}`}
+                          className={`rounded px-1.5 py-0.5 text-[11px] transition-colors disabled:opacity-30 ${
+                            mesElegido === clave
+                              ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                              : "text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-ink)]"
+                          }`}
+                        >
+                          {m.mes}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="h-56">
                   {errorClima ? (
@@ -470,6 +557,36 @@ export function PanelLote({
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Cargando precipitación...
                     </div>
+                  ) : mesElegido ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart
+                        data={lluviaDelMes}
+                        margin={{ top: 5, right: 8, bottom: 0, left: -18 }}
+                      >
+                        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="dia"
+                          tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
+                          stroke="var(--color-border-strong)"
+                          interval={2}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "var(--color-ink-faint)" }}
+                          stroke="var(--color-border-strong)"
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                          labelFormatter={(d) => `Día ${d}`}
+                          formatter={(v) => [`${v} mm`, "Lluvia"]}
+                        />
+                        <Bar dataKey="mm" name="Lluvia" fill="#2979ff" radius={[2, 2, 0, 0]} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={clima.serie} margin={{ top: 5, right: 8, bottom: 0, left: -18 }}>
@@ -511,7 +628,7 @@ export function PanelLote({
                         <Line
                           type="monotone"
                           dataKey="actual"
-                          name={`Campaña ${clima.anio}`}
+                          name={`Campaña ${clima.campania}`}
                           stroke="#2979ff"
                           strokeWidth={2.5}
                           dot={{ r: 2.5 }}
@@ -566,7 +683,7 @@ export function PanelLote({
                   <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart
-                        data={clima.temperatura}
+                        data={temperaturaVisible}
                         margin={{ top: 5, right: 8, bottom: 0, left: -18 }}
                       >
                         <defs>
@@ -584,7 +701,10 @@ export function PanelLote({
                           stroke="var(--color-border-strong)"
                           minTickGap={40}
                           tickFormatter={(f: string) =>
-                            MESES_CORTOS[Number(String(f).split("-")[1]) - 1] ?? String(f)
+                            mesElegido
+                              ? String(Number(String(f).slice(8, 10)))
+                              : (MESES_CORTOS[Number(String(f).split("-")[1]) - 1] ??
+                                String(f))
                           }
                         />
                         <YAxis
