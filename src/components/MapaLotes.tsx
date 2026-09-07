@@ -1042,7 +1042,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
             onChange={(v) => setFiltros((f) => ({ ...f, texto: v }))}
             sugerencias={opciones.clientes}
             placeholder="Asegurado, CUIT, campo, lote..."
-            ancho="w-full sm:w-60"
+            ancho="min-w-0 flex-1 sm:w-60 sm:flex-none"
           />
 
           <button

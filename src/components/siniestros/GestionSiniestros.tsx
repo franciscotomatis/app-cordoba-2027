@@ -13,6 +13,7 @@ import {
   Loader2,
   MapPin,
   Send,
+  FileBarChart,
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -24,6 +25,7 @@ import {
   PUNTO_ESTADO,
 } from "@/lib/siniestros";
 import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exportar";
+import { generarInforme, MAXIMO_LOTES } from "@/lib/informe";
 import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
 import { invalidarLotes } from "@/lib/datosMapa";
 import { useEstadoGuardado } from "@/lib/estadoGuardado";
@@ -213,6 +215,9 @@ export function GestionSiniestros({
   rol: string;
   alcance: Alcance;
 }) {
+  // Repartir el trabajo es decisión del administrador: el perito carga rinde y
+  // fotos de lo suyo, pero no se asigna casos ni se los pasa a un colega.
+  const puedeAsignar = rol === "admin";
   const router = useRouter();
 
   // Con los lotes sin denuncia a la vista, la selección del mapa se expande a
@@ -237,6 +242,7 @@ export function GestionSiniestros({
   const [rindeTanda, setRindeTanda] = useState("");
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [loteFotos, setLoteFotos] = useState<CasoSiniestro | null>(null);
+  const [informe, setInforme] = useState<string | null>(null);
   // Con la base completa son miles de filas: se dibuja de a tandas para que la
   // tabla siga siendo ágil. Los filtros, la selección y las exportaciones
   // trabajan igual sobre todas las filas que dan.
@@ -528,6 +534,32 @@ export function GestionSiniestros({
     router.push("/mapa?desde=siniestros");
   }
 
+  async function generarInformeDeLaSeleccion() {
+    if (elegidosCasos.length === 0) {
+      setAviso("Elegí al menos un lote para generar el informe.");
+      return;
+    }
+    if (elegidosCasos.length > MAXIMO_LOTES) {
+      setAviso(
+        `El informe trae clima e imágenes satelitales de cada lote: van hasta ${MAXIMO_LOTES} por vez. Tenés ${elegidosCasos.length} elegidos.`
+      );
+      return;
+    }
+
+    setInforme("Preparando el informe...");
+    try {
+      await generarInforme(elegidosCasos, (hecho, total, detalle) =>
+        setInforme(
+          hecho >= total ? "Descargando..." : `Lote ${hecho + 1} de ${total} · ${detalle}`
+        )
+      );
+    } catch (e) {
+      setAviso(`No se pudo generar el informe: ${(e as Error).message}`);
+    } finally {
+      setInforme(null);
+    }
+  }
+
   const nombreArchivo = `siniestros-${new Date().toISOString().slice(0, 10)}`;
   const aExportar = elegidosCasos.length > 0 ? elegidosCasos : filtrados;
 
@@ -715,6 +747,7 @@ export function GestionSiniestros({
               </button>
             </div>
 
+            {puedeAsignar && (
             <div className="flex items-center gap-1">
               <select
                 value={peritoDestino}
@@ -745,6 +778,7 @@ export function GestionSiniestros({
                 {peritoDestino === "__quitar__" ? "Quitar" : "Asignar"}
               </button>
             </div>
+            )}
           </>
         )}
 
@@ -781,8 +815,28 @@ export function GestionSiniestros({
             <FileDown className="h-3.5 w-3.5" />
             PDF
           </button>
+          <button
+            onClick={generarInformeDeLaSeleccion}
+            disabled={informe !== null}
+            title="Informe de campaña de los lotes tildados: cobertura, clima e índice verde"
+            className="flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[12px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white disabled:opacity-50"
+          >
+            {informe ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileBarChart className="h-3.5 w-3.5" />
+            )}
+            Informe
+          </button>
         </div>
       </div>
+
+      {informe && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-5 py-1.5 text-[12px] text-[var(--color-ink-muted)]">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {informe}
+        </div>
+      )}
 
       {aviso && (
         <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-accent-soft)] px-5 py-1.5 text-[12px] text-[var(--color-accent)]">

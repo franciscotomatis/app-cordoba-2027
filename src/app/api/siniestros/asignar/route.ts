@@ -20,9 +20,9 @@ export async function POST(request: Request) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (perfil?.role !== "admin" && perfil?.role !== "perito") {
+  if (perfil?.role !== "admin") {
     return NextResponse.json(
-      { error: "Solo un administrador o perito puede asignar casos." },
+      { error: "Solo un administrador puede asignar casos." },
       { status: 403 }
     );
   }
