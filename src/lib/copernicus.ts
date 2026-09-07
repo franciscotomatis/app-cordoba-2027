@@ -300,12 +300,14 @@ export async function imagenNdvi(
   const ancho = enRango(anchoM / RESOLUCION_OBJETIVO_M);
   const alto = enRango(altoM / RESOLUCION_OBJETIVO_M);
 
-  // Ventana de 5 días alrededor de la fecha: es el ciclo de paso del satélite.
+  // Un día a cada lado, no más: la fecha que se pide es la de un pase concreto
+  // y con una ventana ancha "leastCC" podía devolver otro pase, nublado, que no
+  // es el que se midió en la serie.
   const centro = new Date(`${fecha}T00:00:00Z`);
   const desde = new Date(centro);
-  desde.setDate(desde.getDate() - 2);
+  desde.setDate(desde.getDate() - 1);
   const hasta = new Date(centro);
-  hasta.setDate(hasta.getDate() + 2);
+  hasta.setDate(hasta.getDate() + 1);
 
   const r = await fetch(PROCESO_URL, {
     method: "POST",

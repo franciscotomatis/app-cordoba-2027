@@ -10,6 +10,12 @@
 
 const ESCALA = 2; // sin esto el gráfico sale pixelado en el PDF
 
+// El lienzo de 1000 px se dibuja a 515 pt en la hoja: todo se reduce a la
+// mitad. Por eso los tamaños de letra van al doble de lo que se ve en el PDF,
+// para que queden parejos con el texto de las tablas.
+const TITULO = 24;
+const ETIQUETA = 18;
+
 const TINTA = "#2a2724";
 const TENUE = "#8d857b";
 const LINEA = "#d8d2c8";
@@ -41,7 +47,7 @@ function rejilla(
   pasos: number,
   formato: (v: number) => string
 ) {
-  fuente(ctx, 10);
+  fuente(ctx, ETIQUETA);
   ctx.textAlign = "right";
   for (let i = 0; i <= pasos; i++) {
     const valor = min + ((max - min) * i) / pasos;
@@ -55,7 +61,7 @@ function rejilla(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = TENUE;
-    ctx.fillText(formato(valor), caja.izq - 6, y);
+    ctx.fillText(formato(valor), caja.izq - 10, y);
   }
 }
 
@@ -68,10 +74,10 @@ function pasoLindo(rango: number) {
 }
 
 function titulo(ctx: CanvasRenderingContext2D, texto: string, ancho: number) {
-  fuente(ctx, 13, true);
+  fuente(ctx, TITULO, true);
   ctx.fillStyle = TINTA;
   ctx.textAlign = "center";
-  ctx.fillText(texto, ancho / 2, 16);
+  ctx.fillText(texto, ancho / 2, 18);
 }
 
 function ejeInferior(ctx: CanvasRenderingContext2D, caja: Caja) {
@@ -90,22 +96,22 @@ function referencias(
   caja: Caja,
   alto: number
 ) {
-  fuente(ctx, 10);
+  fuente(ctx, ETIQUETA);
   ctx.textAlign = "left";
   let x = caja.izq;
-  const y = alto - 10;
+  const y = alto - 14;
   for (const it of items) {
     ctx.strokeStyle = it.color;
     ctx.lineWidth = 2.5;
     ctx.setLineDash(it.guiones ? [4, 3] : []);
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x + 16, y);
+    ctx.lineTo(x + 20, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = TENUE;
-    ctx.fillText(it.etiqueta, x + 21, y);
-    x += 26 + ctx.measureText(it.etiqueta).width + 16;
+    ctx.fillText(it.etiqueta, x + 26, y);
+    x += 32 + ctx.measureText(it.etiqueta).width + 20;
   }
 }
 
@@ -124,7 +130,7 @@ export function graficoTemperaturas(
   titulo(ctx, "Evolución de temperaturas", ancho);
   if (serie.length < 2) return canvas.toDataURL("image/png");
 
-  const caja: Caja = { izq: 46, der: ancho - 14, arriba: 32, abajo: alto - 44 };
+  const caja: Caja = { izq: 72, der: ancho - 16, arriba: 50, abajo: alto - 62 };
   const paso = pasoLindo(
     Math.max(...serie.map((d) => d.max)) - Math.min(...serie.map((d) => d.min)) + 10
   );
@@ -167,12 +173,12 @@ export function graficoTemperaturas(
   trazar("min", "#2979ff");
 
   // Eje horizontal: una marca por mes.
-  fuente(ctx, 10);
+  fuente(ctx, ETIQUETA);
   ctx.fillStyle = TENUE;
   ctx.textAlign = "center";
   serie.forEach((d, i) => {
     if (d.fecha.slice(8, 10) !== "01") return;
-    ctx.fillText(MES_CORTO[Number(d.fecha.slice(5, 7)) - 1], x(i), caja.abajo + 14);
+    ctx.fillText(MES_CORTO[Number(d.fecha.slice(5, 7)) - 1], x(i), caja.abajo + 20);
   });
 
   ejeInferior(ctx, caja);
@@ -200,7 +206,7 @@ export function graficoPrecipitacion(
   titulo(ctx, "Precipitación mensual", ancho);
   if (serie.length < 2) return canvas.toDataURL("image/png");
 
-  const caja: Caja = { izq: 46, der: ancho - 14, arriba: 32, abajo: alto - 44 };
+  const caja: Caja = { izq: 72, der: ancho - 16, arriba: 50, abajo: alto - 62 };
   const valores = serie.flatMap((m) =>
     [m.actual, m.historico].filter((v): v is number => v !== null)
   );
@@ -250,10 +256,10 @@ export function graficoPrecipitacion(
   trazar("historico", TENUE, 2, true, false);
   trazar("actual", "#2979ff", 2.5, false, true);
 
-  fuente(ctx, 10);
+  fuente(ctx, ETIQUETA);
   ctx.fillStyle = TENUE;
   ctx.textAlign = "center";
-  serie.forEach((m, i) => ctx.fillText(m.mes, x(i), caja.abajo + 14));
+  serie.forEach((m, i) => ctx.fillText(m.mes, x(i), caja.abajo + 20));
 
   ejeInferior(ctx, caja);
   referencias(
@@ -280,7 +286,7 @@ export function graficoNdvi(
   titulo(ctx, "Evolución del índice verde (NDVI)", ancho);
   if (serie.length < 2) return canvas.toDataURL("image/png");
 
-  const caja: Caja = { izq: 46, der: ancho - 14, arriba: 32, abajo: alto - 40 };
+  const caja: Caja = { izq: 72, der: ancho - 16, arriba: 50, abajo: alto - 40 };
   rejilla(ctx, caja, 0, 1, 5, (v) => v.toFixed(1));
 
   const x = (i: number) => caja.izq + (i / (serie.length - 1)) * (caja.der - caja.izq);
@@ -308,7 +314,7 @@ export function graficoNdvi(
     ctx.stroke();
   }
 
-  fuente(ctx, 10);
+  fuente(ctx, ETIQUETA);
   ctx.fillStyle = TENUE;
   ctx.textAlign = "center";
   let mesPrevio = "";
@@ -316,7 +322,7 @@ export function graficoNdvi(
     const mes = p.fecha.slice(0, 7);
     if (mes === mesPrevio) return;
     mesPrevio = mes;
-    ctx.fillText(MES_CORTO[Number(p.fecha.slice(5, 7)) - 1], x(i), caja.abajo + 14);
+    ctx.fillText(MES_CORTO[Number(p.fecha.slice(5, 7)) - 1], x(i), caja.abajo + 20);
   });
 
   ejeInferior(ctx, caja);

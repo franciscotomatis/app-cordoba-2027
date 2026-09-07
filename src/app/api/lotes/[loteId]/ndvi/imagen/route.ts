@@ -31,7 +31,11 @@ export async function GET(
     return NextResponse.json({ error: "Lote sin geometría" }, { status: 404 });
   }
 
-  const ruta = `${loteId}/${fecha}.png`;
+  // La versión forma parte del nombre: si cambia cómo se pide o se pinta la
+  // imagen, las guardadas con la receta anterior dejan de usarse solas, sin
+  // tener que salir a borrar nada.
+  const VERSION = "v2";
+  const ruta = `${loteId}/${fecha}-${VERSION}.png`;
 
   // Si ya se pidió esa imagen antes, se sirve la guardada.
   const { data: guardada } = await supabase.storage.from("ndvi").download(ruta);

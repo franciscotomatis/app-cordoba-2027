@@ -819,7 +819,7 @@ export function GestionSiniestros({
             onClick={generarInformeDeLaSeleccion}
             disabled={informe !== null}
             title="Informe de campaña de los lotes tildados: cobertura, clima e índice verde"
-            className="flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[12px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white disabled:opacity-50"
+            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[12px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-50"
           >
             {informe ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
