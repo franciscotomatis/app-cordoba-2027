@@ -320,60 +320,102 @@ function Lazo({
 
     const contenedor = map.getContainer();
     contenedor.style.cursor = "crosshair";
+    // Sin esto el celular interpreta el arrastre como desplazar la página y no
+    // llega ningún movimiento al trazo.
+    const touchActionPrevia = contenedor.style.touchAction;
+    contenedor.style.touchAction = "none";
+
     map.dragging.disable();
+    map.touchZoom.disable();
+    map.doubleClickZoom.disable();
 
     let dibujando = false;
+    let puntero: number | null = null;
     let puntos: L.LatLng[] = [];
     let trazo: L.Polyline | null = null;
 
-    const puntoDelEvento = (e: MouseEvent) =>
-      map.containerPointToLatLng(
-        L.point(
-          e.clientX - contenedor.getBoundingClientRect().left,
-          e.clientY - contenedor.getBoundingClientRect().top
-        )
+    const puntoDelEvento = (e: PointerEvent) => {
+      const caja = contenedor.getBoundingClientRect();
+      return map.containerPointToLatLng(
+        L.point(e.clientX - caja.left, e.clientY - caja.top)
       );
+    };
 
-    const alPresionar = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+    const limpiarTrazo = () => {
+      if (trazo) {
+        map.removeLayer(trazo);
+        trazo = null;
+      }
+      dibujando = false;
+      puntero = null;
+      puntos = [];
+    };
+
+    // Se usan eventos de puntero (no de mouse) para que el mismo código valga
+    // para el dedo, el mouse y el lápiz.
+    const alPresionar = (e: PointerEvent) => {
+      // Solo el primer dedo o el botón izquierdo: un segundo toque no reinicia
+      // el trazo que se está dibujando.
+      if (dibujando || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+      e.preventDefault();
+
       dibujando = true;
+      puntero = e.pointerId;
       puntos = [puntoDelEvento(e)];
       trazo = L.polyline(puntos, {
         color: "#d97757",
         weight: 2,
         dashArray: "4,4",
       }).addTo(map);
+
+      // Con el puntero capturado el trazo sigue al dedo aunque se salga del
+      // mapa, y llega el pointerup incluso fuera del contenedor.
+      try {
+        contenedor.setPointerCapture(e.pointerId);
+      } catch {
+        // Algunos navegadores lo rechazan; sin captura igual funciona adentro.
+      }
     };
 
-    const alMover = (e: MouseEvent) => {
-      if (!dibujando || !trazo) return;
+    const alMover = (e: PointerEvent) => {
+      if (!dibujando || !trazo || e.pointerId !== puntero) return;
+      e.preventDefault();
       puntos.push(puntoDelEvento(e));
       trazo.setLatLngs(puntos);
     };
 
-    const alSoltar = () => {
-      if (!dibujando) return;
-      dibujando = false;
-      if (trazo) {
-        map.removeLayer(trazo);
-        trazo = null;
+    const alSoltar = (e: PointerEvent) => {
+      if (!dibujando || e.pointerId !== puntero) return;
+      const recorrido = puntos;
+      limpiarTrazo();
+      if (recorrido.length > 2) {
+        alTerminar(recorrido.map((p) => [p.lng, p.lat] as [number, number]));
       }
-      if (puntos.length > 2) {
-        alTerminar(puntos.map((p) => [p.lng, p.lat] as [number, number]));
-      }
-      puntos = [];
     };
 
-    contenedor.addEventListener("mousedown", alPresionar);
-    window.addEventListener("mousemove", alMover);
-    window.addEventListener("mouseup", alSoltar);
+    // Si el sistema se queda con el gesto (una notificación, el gesto de volver
+    // atrás), se descarta: un contorno cortado a la mitad elegiría cualquier cosa.
+    const alCancelar = (e: PointerEvent) => {
+      if (e.pointerId === puntero) limpiarTrazo();
+    };
+
+    contenedor.addEventListener("pointerdown", alPresionar);
+    contenedor.addEventListener("pointermove", alMover);
+    contenedor.addEventListener("pointerup", alSoltar);
+    contenedor.addEventListener("pointercancel", alCancelar);
+    window.addEventListener("pointerup", alSoltar);
 
     return () => {
       contenedor.style.cursor = "";
+      contenedor.style.touchAction = touchActionPrevia;
       map.dragging.enable();
-      contenedor.removeEventListener("mousedown", alPresionar);
-      window.removeEventListener("mousemove", alMover);
-      window.removeEventListener("mouseup", alSoltar);
+      map.touchZoom.enable();
+      map.doubleClickZoom.enable();
+      contenedor.removeEventListener("pointerdown", alPresionar);
+      contenedor.removeEventListener("pointermove", alMover);
+      contenedor.removeEventListener("pointerup", alSoltar);
+      contenedor.removeEventListener("pointercancel", alCancelar);
+      window.removeEventListener("pointerup", alSoltar);
       if (trazo) map.removeLayer(trazo);
     };
   }, [activo, map, alTerminar]);
@@ -1140,7 +1182,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
 
         {modoLazo && (
           <span className="text-[11.5px] text-[var(--color-ink-muted)]">
-            Mantené el botón izquierdo y rodeá los lotes que quieras.
+            Rodeá los lotes con el dedo, o con el mouse sin soltar.
           </span>
         )}
 
