@@ -162,15 +162,26 @@ function cargarImagen(src: string): Promise<HTMLImageElement> {
  * despejada. Si ninguna lo está, se queda con la menos nublada de las probadas.
  */
 async function imagenDelMes(loteId: string, fechas: readonly string[]) {
-  let mejor: { url: string; nubes: number; fecha: string } | null = null;
+  let mejor:
+    | { url: string; nubes: number; fecha: string; ancho: number; alto: number }
+    | null = null;
 
   for (const fecha of fechas.slice(0, 3)) {
     try {
       const r = await fetch(`/api/lotes/${loteId}/ndvi/imagen?fecha=${fecha}`);
       if (!r.ok) continue;
       const url = await comoDataUrl(await r.blob());
-      const nubes = medirNubes(await cargarImagen(url));
-      if (!mejor || nubes < mejor.nubes) mejor = { url, nubes, fecha };
+      const img = await cargarImagen(url);
+      const nubes = medirNubes(img);
+      if (!mejor || nubes < mejor.nubes) {
+        mejor = {
+          url,
+          nubes,
+          fecha,
+          ancho: img.naturalWidth,
+          alto: img.naturalHeight,
+        };
+      }
       if (nubes <= NUBE_ACEPTABLE) break;
     } catch {
       // Se prueba la fecha siguiente del mismo mes.
@@ -424,7 +435,22 @@ export async function generarInforme(
       );
 
       if (elegida) {
-        doc.addImage(elegida.url, "PNG", x, yImg, ladoImagen, ladoImagen);
+        // El hueco es cuadrado pero el lote no tiene por qué serlo: se encaja
+        // respetando la proporción, si no sale estirado.
+        const escala = Math.min(
+          ladoImagen / elegida.ancho,
+          ladoImagen / elegida.alto
+        );
+        const anchoDibujo = elegida.ancho * escala;
+        const altoDibujo = elegida.alto * escala;
+        doc.addImage(
+          elegida.url,
+          "PNG",
+          x + (ladoImagen - anchoDibujo) / 2,
+          yImg + (ladoImagen - altoDibujo) / 2,
+          anchoDibujo,
+          altoDibujo
+        );
         // Si ni la mejor del mes estaba despejada, se avisa en vez de dejar que
         // alguien lea una mancha gris como si fuera el estado del cultivo.
         if (elegida.nubes > NUBE_ACEPTABLE) {
