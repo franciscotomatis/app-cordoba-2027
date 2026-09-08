@@ -34,6 +34,7 @@ import { FiltroMulti } from "@/components/mapa/FiltroMulti";
 import { BuscadorTexto } from "@/components/mapa/BuscadorTexto";
 import { CeldaRinde } from "./CeldaRinde";
 import { GaleriaLote } from "./GaleriaLote";
+import { AvisoAlPerito, type MensajeAlPerito } from "./AvisoAlPerito";
 
 export type CasoSiniestro = {
   // Una fila por lote. Si no hay denuncia, siniestro_id y los campos del
@@ -244,6 +245,11 @@ export function GestionSiniestros({
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [loteFotos, setLoteFotos] = useState<CasoSiniestro | null>(null);
   const [informe, setInforme] = useState<string | null>(null);
+  // Mensaje listo para avisarle al perito desde Outlook.
+  const [avisoPerito, setAvisoPerito] = useState<{
+    mensaje: MensajeAlPerito;
+    motivo: string | null;
+  } | null>(null);
   // Con la base completa son miles de filas: se dibuja de a tandas para que la
   // tabla siga siendo ágil. Los filtros, la selección y las exportaciones
   // trabajan igual sobre todas las filas que dan.
@@ -502,13 +508,15 @@ export function GestionSiniestros({
 
     if (datos.quitado) {
       setAviso(`${datos.lotes} lotes sin perito asignado.`);
-    } else {
-      const detalle = `${datos.lotes} lotes asignados (${datos.casos} con denuncia)`;
+    } else if (datos.emailEnviado) {
       setAviso(
-        datos.emailEnviado
-          ? `${detalle} y notificados por correo.`
-          : `${detalle}. ${datos.motivoEmail ?? ""}`
+        `${datos.lotes} lotes asignados (${datos.casos} con denuncia) y notificados por correo.`
       );
+    } else if (datos.mensaje) {
+      // Sin envío automático, se ofrece abrirlo en Outlook ya escrito.
+      setAvisoPerito({ mensaje: datos.mensaje, motivo: datos.motivoEmail ?? null });
+    } else {
+      setAviso(`${datos.lotes} lotes asignados (${datos.casos} con denuncia).`);
     }
 
     setPeritoDestino("");
@@ -820,6 +828,14 @@ export function GestionSiniestros({
           </button>
         </div>
       </div>
+
+      {avisoPerito && (
+        <AvisoAlPerito
+          mensaje={avisoPerito.mensaje}
+          motivo={avisoPerito.motivo}
+          onCerrar={() => setAvisoPerito(null)}
+        />
+      )}
 
       {informe && (
         <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-5 py-1.5 text-[12px] text-[var(--color-ink-muted)]">

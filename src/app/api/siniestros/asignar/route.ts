@@ -139,6 +139,63 @@ export async function POST(request: Request) {
     </p>
   </div>`;
 
+  // Versión en texto plano, para abrir el correo en Outlook desde la app.
+  // El "mailto" no admite HTML y tiene un tope de largo, así que hay dos:
+  // una corta para el enlace y una completa para copiar y pegar.
+  const linea = (c: NonNullable<typeof detalle>[number]) =>
+    [
+      `#${c.id_lote_externo}`,
+      c.cliente_nombre ?? "",
+      c.cultivo ?? "",
+      c.siniestro_id
+        ? `${c.causa ?? "Siniestro"}${c.fecha ? ` (${String(c.fecha).slice(0, 10)})` : ""}`
+        : "Sin denuncia",
+      [c.localidad, c.departamento].filter(Boolean).join(", "),
+      c.hectareas_aseguradas ? `${Math.round(Number(c.hectareas_aseguradas))} ha` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+  const ordenado = (detalle ?? [])
+    .slice()
+    .sort((a, b) => (a.siniestro_id ? 0 : 1) - (b.siniestro_id ? 0 : 1));
+
+  const encabezadoTexto = [
+    `Tenés ${loteIds.length} lote${loteIds.length > 1 ? "s" : ""} para inspeccionar.`,
+    "",
+    `${conDenuncia} con denuncia y ${sinDenuncia} sin denuncia del mismo CUIT y cultivo.`,
+    `Asignados por ${perfil?.nombre_completo ?? perfil?.email ?? "el equipo"} · Multirriesgo Córdoba 25/26`,
+    "",
+  ].join("\n");
+
+  const pie = [
+    "",
+    "Entrá a la aplicación para cargar el rinde estimado de cada lote y las fotos de la inspección.",
+  ].join("\n");
+
+  // En el enlace entran los primeros; el resto se ve en la app o en la versión
+  // completa. Un mailto muy largo lo cortan tanto el navegador como Outlook.
+  const TOPE_ENLACE = 20;
+  const cuerpoCorto =
+    encabezadoTexto +
+    ordenado.slice(0, TOPE_ENLACE).map(linea).join("\n") +
+    (ordenado.length > TOPE_ENLACE
+      ? `\n... y ${ordenado.length - TOPE_ENLACE} lote(s) más, en la aplicación.`
+      : "") +
+    pie;
+
+  const cuerpoCompleto = encabezadoTexto + ordenado.map(linea).join("\n") + pie;
+
+  const asunto = `${loteIds.length} lote${loteIds.length > 1 ? "s" : ""} asignado${loteIds.length > 1 ? "s" : ""} para inspección`;
+
+  const mensaje = {
+    para: perito?.email ?? "",
+    asunto,
+    cuerpoCorto,
+    cuerpoCompleto,
+    perito: perito?.nombre_completo || perito?.email || "",
+  };
+
   const clave = process.env.RESEND_API_KEY;
   const remitente = process.env.RESEND_FROM;
 
@@ -147,8 +204,7 @@ export async function POST(request: Request) {
       lotes: loteIds.length,
       casos: conDenuncia,
       emailEnviado: false,
-      motivoEmail:
-        "El envío de correo todavía no está configurado (falta RESEND_API_KEY / RESEND_FROM).",
+      mensaje,
     });
   }
 
@@ -158,6 +214,7 @@ export async function POST(request: Request) {
       casos: conDenuncia,
       emailEnviado: false,
       motivoEmail: "El perito no tiene email cargado.",
+      mensaje,
     });
   }
 
@@ -175,7 +232,8 @@ export async function POST(request: Request) {
         lotes: loteIds.length,
         casos: conDenuncia,
         emailEnviado: false,
-        motivoEmail: `Quedó asignado, pero el correo falló: ${error.message}`,
+        motivoEmail: `El envío automático falló: ${error.message}`,
+        mensaje,
       });
     }
   } catch (e) {
@@ -183,7 +241,8 @@ export async function POST(request: Request) {
       lotes: loteIds.length,
       casos: conDenuncia,
       emailEnviado: false,
-      motivoEmail: `Quedó asignado, pero el correo falló: ${(e as Error).message}`,
+      motivoEmail: `El envío automático falló: ${(e as Error).message}`,
+      mensaje,
     });
   }
 
