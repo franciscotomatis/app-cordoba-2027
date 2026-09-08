@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,17 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Multirriesgo Córdoba",
   description: "Gestión de lotes agrícolas asegurados",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "Multirriesgo", statusBarStyle: "default" },
+  icons: { apple: "/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#e5007d",
+  width: "device-width",
+  initialScale: 1,
+  // El perito usa la app con guantes y a pleno sol: que pueda agrandar.
+  maximumScale: 5,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

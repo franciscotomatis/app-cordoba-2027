@@ -18,6 +18,8 @@ import {
 import { Camera, Loader2, Maximize2, Minimize2, Upload, X } from "lucide-react";
 import { BotonBorrarFoto } from "@/components/fotos/BotonBorrarFoto";
 import { createClient } from "@/lib/supabase/client";
+import { encolarFoto, encolarRinde } from "@/lib/cola";
+import { comprimirFoto } from "@/lib/comprimirFoto";
 import { colorPorCultivo, COLOR_CAUSA, COLOR_CAUSA_DEFAULT } from "@/lib/colores";
 import { ETIQUETA_ESTADO } from "@/lib/siniestros";
 import { SeccionNdvi } from "./SeccionNdvi";
@@ -195,18 +197,14 @@ export function PanelLote({
     }
 
     setGuardando(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("lotes")
-      .update({
-        rinde_estimado: valor,
-        rinde_estimado_en: valor === null ? null : new Date().toISOString(),
-      })
-      .eq("id", lote.id);
+    // Pasa por la cola: con señal sube en el acto, sin señal queda en el
+    // teléfono. Un solo camino en lugar de dos que se desincronizan.
+    await encolarRinde(lote.id, valor);
     setGuardando(false);
 
-    if (error) {
-      setAviso(`No se pudo guardar: ${error.message}`);
+    if (!navigator.onLine) {
+      setAviso("Guardado en el teléfono. Se sube solo cuando haya señal.");
+      onRindeGuardado(lote.id, valor);
       return;
     }
     setAviso("Rinde guardado.");
@@ -230,19 +228,6 @@ export function PanelLote({
       return;
     }
 
-    const extension = archivo.name.split(".").pop()?.toLowerCase() || "jpg";
-    const ruta = `${user.id}/${Date.now()}.${extension}`;
-
-    const { error: errorSubida } = await supabase.storage
-      .from("fotos")
-      .upload(ruta, archivo, { contentType: archivo.type || "image/jpeg" });
-
-    if (errorSubida) {
-      setGuardando(false);
-      setAviso(`No se pudo subir: ${errorSubida.message}`);
-      return;
-    }
-
     // La ubicación del lote alcanza para georreferenciar la foto; si el
     // dispositivo da su posición, se usa esa, que es más precisa.
     const coords = await new Promise<GeolocationCoordinates | null>((resolve) => {
@@ -254,20 +239,23 @@ export function PanelLote({
       );
     });
 
-    const { error: errorFila } = await supabase.from("fotos").insert({
-      lote_id: lote.id,
-      storage_path: ruta,
-      nombre_original: archivo.name,
-      subido_por: user.id,
-      geom: coords
-        ? `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`
-        : null,
-    });
+    // Se achica antes de guardarla: a campo la señal es mala y una foto de
+    // 4 MB no sube nunca. A 1600 px se sigue viendo el daño.
+    const comprimida = await comprimirFoto(archivo);
+
+    await encolarFoto(
+      lote.id,
+      comprimida,
+      archivo.name,
+      coords?.latitude ?? null,
+      coords?.longitude ?? null
+    );
 
     setGuardando(false);
 
-    if (errorFila) {
-      setAviso(`Se subió la imagen pero no se registró: ${errorFila.message}`);
+    if (!navigator.onLine) {
+      setAviso("Foto guardada en el teléfono. Se sube sola cuando haya señal.");
+      if (inputFoto.current) inputFoto.current.value = "";
       return;
     }
 

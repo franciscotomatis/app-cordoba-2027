@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { comprimirFoto } from "@/lib/comprimirFoto";
 
 type Estado = "idle" | "subiendo" | "ok" | "error";
 
@@ -46,9 +47,16 @@ export function FotoUpload() {
     const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
     const path = `${user.id}/${Date.now()}.${extension}`;
 
+    // Se achica antes de subir: una foto de celular pesa 3 o 4 MB y a esa
+    // resolución no aporta nada para mirar un lote.
+    const comprimida = await comprimirFoto(file);
+
     const { error: errorUpload } = await supabase.storage
       .from("fotos")
-      .upload(path, file, { contentType: file.type, upsert: false });
+      .upload(path, comprimida, {
+        contentType: comprimida.type || "image/jpeg",
+        upsert: false,
+      });
 
     if (errorUpload) {
       setEstado("error");

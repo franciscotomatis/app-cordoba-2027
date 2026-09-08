@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Sidebar, type ItemMenu } from "./Sidebar";
 import { ThemeToggle } from "./ThemeToggle";
+import { EstadoConexion } from "@/components/EstadoConexion";
+import { RegistrarServiceWorker } from "@/components/RegistrarServiceWorker";
 import { LogoutButton } from "@/app/logout-button";
 
 export function Shell({
@@ -63,12 +65,14 @@ export function Shell({
           </div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <EstadoConexion />
             <ThemeToggle />
             <LogoutButton />
           </div>
         </header>
 
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+        <RegistrarServiceWorker />
       </div>
     </div>
   );

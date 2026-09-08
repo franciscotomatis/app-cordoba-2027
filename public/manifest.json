@@ -1,0 +1,14 @@
+{
+  "name": "Multirriesgo Córdoba",
+  "short_name": "Multirriesgo",
+  "description": "Gestión de lotes asegurados y siniestros",
+  "start_url": "/mapa",
+  "display": "standalone",
+  "background_color": "#f7f5f2",
+  "theme_color": "#e5007d",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

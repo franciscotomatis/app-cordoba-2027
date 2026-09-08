@@ -28,6 +28,7 @@ import { exportarCsv, exportarExcel, exportarPdf, type Columna } from "@/lib/exp
 import { generarInforme, MAXIMO_LOTES } from "@/lib/informe";
 import { guardarSeleccion, leerSeleccion } from "@/lib/seleccion";
 import { invalidarLotes } from "@/lib/datosMapa";
+import { encolarRinde } from "@/lib/cola";
 import { useEstadoGuardado } from "@/lib/estadoGuardado";
 import { FiltroMulti } from "@/components/mapa/FiltroMulti";
 import { BuscadorTexto } from "@/components/mapa/BuscadorTexto";
@@ -440,21 +441,10 @@ export function GestionSiniestros({
     setGuardando(true);
     setAviso(null);
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("lotes")
-      .update({
-        rinde_estimado: valor,
-        rinde_estimado_en: valor === null ? null : new Date().toISOString(),
-      })
-      .in("id", loteIds);
+    // Por la cola, igual que en el mapa: si no hay señal queda pendiente.
+    for (const id of loteIds) await encolarRinde(id, valor);
 
     setGuardando(false);
-
-    if (error) {
-      setAviso(`No se pudo guardar el rinde: ${error.message}`);
-      return;
-    }
 
     setAviso(
       valor === null

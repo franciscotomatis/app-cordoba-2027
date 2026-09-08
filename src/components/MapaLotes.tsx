@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { COLOR_CAUSA, COLOR_CAUSA_DEFAULT, colorPorCultivo } from "@/lib/colores";
 import { cargarLotes, invalidarLotes, lotesEnCache } from "@/lib/datosMapa";
-import { createClient } from "@/lib/supabase/client";
 import { dentroDePoligono, useSeleccion } from "@/lib/seleccion";
 import { CapaFotos } from "./mapa/CapaFotos";
 import { CapaLimites } from "./mapa/CapaLimites";
@@ -38,6 +37,8 @@ import { PanelLote, type LoteDetalle } from "./mapa/PanelLote";
 import { ESTADOS, ETIQUETA_ESTADO, PUNTO_ESTADO } from "@/lib/siniestros";
 import { FiltroFecha, RANGO_VACIO, dentroDelRango, type RangoFecha } from "./mapa/FiltroFecha";
 import { guardar, leerGuardado } from "@/lib/estadoGuardado";
+import { encolarFoto, encolarRinde } from "@/lib/cola";
+import { comprimirFoto } from "@/lib/comprimirFoto";
 import { FiltroMulti } from "./mapa/FiltroMulti";
 import { AZULES, type EscalaLluvia } from "@/lib/escalaLluvia";
 import { CapaLluvia } from "./mapa/CapaLluvia";
@@ -882,18 +883,9 @@ export default function MapaLotes({ rol }: { rol: string }) {
     setGuardandoRinde(true);
     setAvisoRinde(null);
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("lotes")
-      .update({ rinde_estimado: valor, rinde_estimado_en: new Date().toISOString() })
-      .in("id", seleccion);
+    for (const id of seleccion) await encolarRinde(id, valor);
 
     setGuardandoRinde(false);
-
-    if (error) {
-      setAvisoRinde(`No se pudo guardar: ${error.message}`);
-      return;
-    }
 
     // Se actualiza lo que ya está en pantalla y se descarta la caché.
     for (const f of datos?.features ?? []) {
@@ -903,23 +895,17 @@ export default function MapaLotes({ rol }: { rol: string }) {
     invalidarLotes();
     setRindeTanda("");
     setAvisoRinde(
-      `Rinde de ${valor} qq/ha cargado en ${seleccion.length} lote${seleccion.length > 1 ? "s" : ""}.`
+      navigator.onLine
+        ? `Rinde de ${valor} qq/ha cargado en ${seleccion.length} lote${seleccion.length > 1 ? "s" : ""}.`
+        : `Rinde guardado en el teléfono para ${seleccion.length} lote${seleccion.length > 1 ? "s" : ""}. Sube solo cuando haya señal.`
     );
   }
 
   /** Guarda el rinde de un lote desde el popup. Devuelve "" si salió bien. */
   const guardarRindeDeLote = useCallback(
     async (loteId: string, valor: number | null) => {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("lotes")
-        .update({
-          rinde_estimado: valor,
-          rinde_estimado_en: valor === null ? null : new Date().toISOString(),
-        })
-        .eq("id", loteId);
-
-      if (error) return error.message;
+      // Por la cola: sin señal queda en el teléfono y sube después.
+      await encolarRinde(loteId, valor);
 
       for (const f of datos?.features ?? []) {
         const p = f.properties as LoteProps;
@@ -949,28 +935,7 @@ export default function MapaLotes({ rol }: { rol: string }) {
     const archivo = e.target.files?.[0];
     if (!archivo || !loteFoto) return;
 
-    setAvisoRinde("Subiendo foto...");
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setAvisoRinde("Sesión vencida, volvé a entrar.");
-      return;
-    }
-
-    const extension = archivo.name.split(".").pop()?.toLowerCase() || "jpg";
-    const ruta = `${user.id}/${Date.now()}.${extension}`;
-
-    const { error: errorSubida } = await supabase.storage
-      .from("fotos")
-      .upload(ruta, archivo, { contentType: archivo.type || "image/jpeg" });
-
-    if (errorSubida) {
-      setAvisoRinde(`No se pudo subir la foto: ${errorSubida.message}`);
-      return;
-    }
+    setAvisoRinde("Guardando foto...");
 
     const coords = await new Promise<GeolocationCoordinates | null>((resolve) => {
       if (!navigator.geolocation) return resolve(null);
@@ -981,21 +946,25 @@ export default function MapaLotes({ rol }: { rol: string }) {
       );
     });
 
-    const { error: errorFila } = await supabase.from("fotos").insert({
-      lote_id: loteFoto,
-      storage_path: ruta,
-      nombre_original: archivo.name,
-      subido_por: user.id,
-      geom: coords ? `SRID=4326;POINT(${coords.longitude} ${coords.latitude})` : null,
-    });
+    // Se achica antes de encolarla: con señal de campo una foto de 4 MB no
+    // sube, y a 1600 px se sigue viendo el daño.
+    const comprimida = await comprimirFoto(archivo);
+
+    await encolarFoto(
+      loteFoto,
+      comprimida,
+      archivo.name,
+      coords?.latitude ?? null,
+      coords?.longitude ?? null
+    );
 
     if (e.target) e.target.value = "";
     setLoteFoto(null);
 
     setAvisoRinde(
-      errorFila
-        ? `La imagen se subió pero no se registró: ${errorFila.message}`
-        : "Foto agregada al lote."
+      navigator.onLine
+        ? "Foto agregada al lote."
+        : "Foto guardada en el teléfono. Sube sola cuando haya señal."
     );
   }
 
