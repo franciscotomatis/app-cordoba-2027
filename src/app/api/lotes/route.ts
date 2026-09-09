@@ -69,6 +69,13 @@ const COLUMNAS = [
 export async function GET() {
   const supabase = await createClient();
 
+  // El middleware ya bloquea esta ruta sin sesión, pero un endpoint que
+  // devuelve los 5.701 lotes no debería depender de una sola barrera.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+
   const { data, error } = await fetchAll<LoteMapa>(supabase, "lotes_mapa", COLUMNAS);
 
   if (error) {

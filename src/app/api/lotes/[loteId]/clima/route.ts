@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CAMPANIA, MESES_CAMPANIA } from "@/lib/campania";
+import { clienteDeServicio } from "@/lib/supabase/servicio";
 
 /**
  * Precipitación mensual del lote: promedio histórico contra el año en curso.
@@ -124,6 +125,10 @@ export async function GET(
     return NextResponse.json({ error: "Lote sin ubicación" }, { status: 404 });
   }
 
+  // La caché la escribe el servidor. El permiso ya se verificó arriba al leer
+  // el lote con la sesión del usuario: si no puede verlo, no llega hasta acá.
+  const cache = clienteDeServicio() ?? supabase;
+
   const lat = aCelda(lote.lat);
   const lon = aCelda(lote.lon);
 
@@ -202,7 +207,7 @@ export async function GET(
     }
 
     if (nuevas.length > 0) {
-      await supabase.from("clima_celda").upsert(
+      await cache.from("clima_celda").upsert(
         nuevas.map((f) => ({
           lat_celda: lat,
           lon_celda: lon,
@@ -311,7 +316,7 @@ export async function GET(
             t_max: d.daily!.temperature_2m_max[i],
           }));
 
-          await supabase
+          await cache
             .from("clima_dia")
             .upsert(filasDia, { onConflict: "lat_celda,lon_celda,fecha" });
 

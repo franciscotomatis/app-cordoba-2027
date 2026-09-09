@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { clienteDeServicio } from "@/lib/supabase/servicio";
 import { hayCredenciales, serieNdvi } from "@/lib/copernicus";
 import type { Geometry } from "geojson";
 
@@ -28,6 +29,9 @@ export async function GET(
   if (!lote?.geometry) {
     return NextResponse.json({ error: "Lote sin geometría" }, { status: 404 });
   }
+
+  // Igual que en el clima: el permiso ya lo validó la lectura del lote.
+  const cache = clienteDeServicio() ?? supabase;
 
   const hasta = new Date();
   hasta.setDate(hasta.getDate() - 1);
@@ -80,7 +84,7 @@ export async function GET(
         }
 
         if (puntos.length > 0) {
-          await supabase.from("ndvi_lote").upsert(
+          await cache.from("ndvi_lote").upsert(
             puntos.map((p) => ({
               lote_id: loteId,
               fecha: p.fecha,
@@ -91,7 +95,7 @@ export async function GET(
           );
         }
 
-        await supabase.from("ndvi_consulta").upsert(
+        await cache.from("ndvi_consulta").upsert(
           {
             lote_id: loteId,
             desde: desdeISO,
@@ -105,7 +109,7 @@ export async function GET(
         );
       } catch (e) {
         avisoFuente = (e as Error).message;
-        await supabase.from("ndvi_consulta").upsert(
+        await cache.from("ndvi_consulta").upsert(
           {
             lote_id: loteId,
             desde: desdeISO,
